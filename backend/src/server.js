@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const crypto = require('crypto');
+const path = require('path');
 const config = require('./config');
 const sessionStore = require('./sessionStore');
 const razorpayService = require('./razorpayService');
@@ -14,6 +15,7 @@ app.use(express.json({
   }
 }));
 app.use(cors());
+app.use(express.static(path.join(__dirname, '../../webpage')));
 
 // Device Authentication Middleware
 function authenticateDevice(req, res, next) {
@@ -246,6 +248,39 @@ alert((await r.json()).message||'Failed');location.reload();}</script></body></h
 // ==========================================
 // 6. Health & Status Check
 // ==========================================
+// Web Order Creation (Razorpay Standard Orders)
+app.post('/api/order/create', async (req, res) => {
+  try {
+    const { amount, currency, notes } = req.body;
+    const amountInPaise = Math.round(parseFloat(amount) * 100);
+
+    if (!config.MOCK_MODE && razorpayService.instance) {
+      const order = await razorpayService.instance.orders.create({
+        amount: amountInPaise,
+        currency: currency || 'INR',
+        receipt: `rcpt_${Date.now()}`,
+        notes: notes || {}
+      });
+      return res.json({ success: true, order, keyId: config.RAZORPAY_KEY_ID });
+    } else {
+      const mockOrderId = 'order_mock_' + Math.random().toString(36).substring(2, 10);
+      return res.json({
+        success: true,
+        order: {
+          id: mockOrderId,
+          amount: amountInPaise,
+          currency: 'INR',
+          status: 'created'
+        },
+        keyId: config.RAZORPAY_KEY_ID || 'rzp_test_placeholder'
+      });
+    }
+  } catch (err) {
+    console.error('[API] /api/order/create error:', err);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 app.get('/api/health', (req, res) => {
   res.json({
     status: 'online',

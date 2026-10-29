@@ -1,0 +1,815 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FUNN HUB | Food & Indoor Game Zone - NSL SEZ Arena Uppal Hyderabad</title>
+  <meta name="description" content="FUNN HUB: Indoor games and food cafe at NSL SEZ Arena Uppal Hyderabad. Snooker, Pool, VR Gaming, Racing Simulators, Air Hockey, Fresh Burgers, Pizzas, and online payments via Razorpay.">
+  
+  <!-- Favicon -->
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎮</text></svg>">
+  
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  
+  <!-- Custom Light Theme Stylesheet -->
+  <link rel="stylesheet" href="styles.css">
+  
+  <!-- Razorpay Checkout Script -->
+  <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+</head>
+<body>
+
+  <!-- ===================================================================
+       1. Top Trust & Compliance Bar (Razorpay Merchant Standard)
+       =================================================================== -->
+  <div class="compliance-top-banner">
+    <div>
+      <span class="badge"><i class="fa-solid fa-shield-halved"></i> Razorpay Verified</span>
+      <span>100% Safe Payments in Indian Rupees (INR ₹) &bull; PAN: AALFF4908R</span>
+    </div>
+    <div style="display: flex; gap: 14px; flex-wrap: wrap;">
+      <a onclick="openPolicyModal('refund')">Refund Policy</a>
+      <span>&bull;</span>
+      <a onclick="openPolicyModal('shipping')">Delivery Policy</a>
+      <span>&bull;</span>
+      <a onclick="openPolicyModal('contact')">Helpline: +91 98522 37730</a>
+    </div>
+  </div>
+
+  <!-- ===================================================================
+       2. Sticky Navigation Bar
+       =================================================================== -->
+  <header class="navbar">
+    <div class="container nav-container">
+      <a href="#" class="brand-logo">
+        <div class="brand-icon">
+          <i class="fa-solid fa-gamepad"></i>
+        </div>
+        <span>FUNN HUB<span style="color: var(--primary);">.</span></span>
+        <span class="brand-badge">Food & Fun</span>
+      </a>
+
+      <nav>
+        <ul class="nav-links">
+          <li><a href="#catalog" class="nav-link active">All Offerings</a></li>
+          <li><a href="#catalog" class="nav-link" onclick="setTimeout(() => { const b = document.querySelector('.tab-btn[data-category=\'games\']'); if(b) b.click(); }, 100)">Indoor Games</a></li>
+          <li><a href="#catalog" class="nav-link" onclick="setTimeout(() => { const b = document.querySelector('.tab-btn[data-category=\'food\']'); if(b) b.click(); }, 100)">Food & Cafe</a></li>
+          <li><a href="#combos" class="nav-link">Party Combos</a></li>
+          <li><a href="#how-it-works" class="nav-link">How to Order</a></li>
+          <li><a href="#compliance-info" class="nav-link">About & Contact</a></li>
+        </ul>
+      </nav>
+
+      <div class="nav-actions">
+        <button class="cart-btn" onclick="toggleCartDrawer(true)" aria-label="View Cart">
+          <i class="fa-solid fa-bag-shopping"></i>
+          <span>Cart</span>
+          <span class="cart-count">0</span>
+        </button>
+
+        <a href="#catalog" class="btn-primary" style="display: none; @media(min-width: 640px){display:inline-flex;}">
+          <span>Order Now</span>
+          <i class="fa-solid fa-arrow-right"></i>
+        </a>
+
+        <button class="mobile-toggle" onclick="toggleCartDrawer(true)" aria-label="Toggle Navigation">
+          <i class="fa-solid fa-bars"></i>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- ===================================================================
+       3. Hero Section
+       =================================================================== -->
+  <section class="hero-section">
+    <div class="container hero-grid">
+      <div class="hero-content">
+        <span class="section-tag">
+          <i class="fa-solid fa-location-dot"></i> NSL SEZ Arena, Uppal, Hyderabad
+        </span>
+        <h1 class="hero-title">
+          Play Indoor Games. <br>
+          <span class="highlight-orange">Enjoy Good Food.</span> <br>
+          <span class="highlight-game">Pay Fast & Easy.</span>
+        </h1>
+        <p class="hero-desc">
+          Welcome to <b>FUNN HUB</b>. Play Snooker, 8-Ball Pool, Virtual Reality, Racing Simulators, Table Tennis, and Air Hockey. Enjoy fresh burgers, hot pizzas, and cool drinks with easy digital payments via Razorpay.
+        </p>
+
+        <div class="hero-cta-group">
+          <a href="#catalog" class="btn-primary btn-game" style="padding: 14px 28px; font-size: 1.05rem;" onclick="setTimeout(() => { const b = document.querySelector('.tab-btn[data-category=\'games\']'); if(b) b.click(); }, 150)">
+            <i class="fa-solid fa-gamepad"></i> Explore Games & Passes
+          </a>
+          <a href="#catalog" class="btn-secondary" style="padding: 14px 28px; font-size: 1.05rem;" onclick="setTimeout(() => { const b = document.querySelector('.tab-btn[data-category=\'food\']'); if(b) b.click(); }, 150)">
+            <i class="fa-solid fa-utensils"></i> View Food Menu
+          </a>
+        </div>
+
+        <div class="hero-pills">
+          <div class="hero-pill"><i class="fa-solid fa-bolt"></i> Instant Digital Pass</div>
+          <div class="hero-pill"><i class="fa-solid fa-indian-rupee-sign"></i> Prices in Rupees (₹)</div>
+          <div class="hero-pill"><i class="fa-solid fa-shield-halved"></i> 100% Razorpay Secure</div>
+          <div class="hero-pill"><i class="fa-solid fa-circle-check"></i> FSSAI Certified: 23626009000033</div>
+        </div>
+      </div>
+
+      <div class="hero-visual">
+        <div class="hero-card-main">
+          <img src="https://images.unsplash.com/photo-1511882150382-421056c89033?auto=format&fit=crop&w=800&q=80" alt="FUNN HUB Arena Uppal" onerror="handleImageError(this, 'game')">
+        </div>
+
+        <div class="hero-floating-card card-top">
+          <div class="floating-icon game">
+            <i class="fa-solid fa-vr-cardboard"></i>
+          </div>
+          <div class="floating-text">
+            <h4>VR Gaming & Racing</h4>
+            <p>Starting at only ₹199</p>
+          </div>
+        </div>
+
+        <div class="hero-floating-card card-bottom">
+          <div class="floating-icon food">
+            <i class="fa-solid fa-pizza-slice"></i>
+          </div>
+          <div class="floating-text">
+            <h4>Fresh Stone-Baked Pizza</h4>
+            <p>From ₹249 with 100% cheese</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================================================================
+       4. Trust & Security Strip
+       =================================================================== -->
+  <section class="trust-strip">
+    <div class="container">
+      <div class="trust-grid">
+        <div class="trust-item">
+          <div class="trust-item-icon"><i class="fa-solid fa-credit-card"></i></div>
+          <div class="trust-text">
+            <h4>Razorpay Payment</h4>
+            <p>Pay with UPI, GPay, PhonePe, Cards</p>
+          </div>
+        </div>
+        <div class="trust-item">
+          <div class="trust-item-icon"><i class="fa-solid fa-qrcode"></i></div>
+          <div class="trust-text">
+            <h4>Instant QR Pass</h4>
+            <p>Pass shows on screen and via SMS</p>
+          </div>
+        </div>
+        <div class="trust-item">
+          <div class="trust-item-icon"><i class="fa-solid fa-utensils"></i></div>
+          <div class="trust-text">
+            <h4>Fresh & Hygienic</h4>
+            <p>FSSAI licensed kitchen</p>
+          </div>
+        </div>
+        <div class="trust-item">
+          <div class="trust-item-icon"><i class="fa-solid fa-rotate-left"></i></div>
+          <div class="trust-text">
+            <h4>Quick Refunds</h4>
+            <p>Automatic refund for failed payments</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================================================================
+       5. Food & Games Catalog Section
+       =================================================================== -->
+  <section id="catalog" class="catalog-section">
+    <div class="container">
+      <div style="text-align: center; margin-bottom: 24px;">
+        <span class="section-tag"><i class="fa-solid fa-sparkles"></i> Menu & Attractions</span>
+        <h2 class="section-title">Indoor Games & <span>Fresh Food Menu</span></h2>
+        <p class="section-subtitle" style="margin: 0 auto 30px;">
+          Select your games and snacks. Clear prices in Indian Rupees (₹) with instant online billing.
+        </p>
+      </div>
+
+      <!-- Search & Filters -->
+      <div class="catalog-header-bar">
+        <div class="catalog-search-filter">
+          <div class="search-box">
+            <i class="fa-solid fa-magnifying-glass"></i>
+            <input type="text" id="catalog-search" placeholder="Search snooker, pizza, VR, burger, racing...">
+          </div>
+
+          <div class="diet-filter">
+            <button class="diet-chip active" data-diet="all">All Items</button>
+            <button class="diet-chip" data-diet="veg"><span style="color: #16a34a;">🟢</span> Pure Veg</button>
+            <button class="diet-chip" data-diet="non-veg"><span style="color: #dc2626;">🔴</span> Non-Veg</button>
+            <button class="diet-chip" data-diet="game"><span style="color: #6366f1;">🎮</span> Games Only</button>
+          </div>
+        </div>
+
+        <!-- Category Tabs -->
+        <div class="category-tabs">
+          <button class="tab-btn active" data-category="all">
+            <i class="fa-solid fa-border-all"></i> All Offerings
+          </button>
+          <button class="tab-btn game-tab" data-category="games">
+            <i class="fa-solid fa-gamepad"></i> Indoor Games (Annexure-1)
+          </button>
+          <button class="tab-btn food-tab" data-category="food">
+            <i class="fa-solid fa-utensils"></i> Food & Cafe
+          </button>
+          <button class="tab-btn" data-category="combos">
+            <i class="fa-solid fa-gift"></i> Combos & Packages
+          </button>
+        </div>
+      </div>
+
+      <!-- Items Grid (Populated dynamically by app.js) -->
+      <div id="items-grid" class="items-grid">
+        <!-- Javascript renders catalog here -->
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================================================================
+       6. Combos & Party Packs Section
+       =================================================================== -->
+  <section id="combos" class="combos-section">
+    <div class="container">
+      <div style="text-align: center; margin-bottom: 40px;">
+        <span class="section-tag"><i class="fa-solid fa-tag"></i> Best Deals</span>
+        <h2 class="section-title">Save Money with <span>Food + Game Combos</span></h2>
+        <p class="section-subtitle" style="margin: 0 auto;">Bundle food and games together for great savings.</p>
+      </div>
+
+      <div class="combos-grid">
+        <!-- Combo 1 -->
+        <div class="combo-card">
+          <div class="combo-header">
+            <div>
+              <span class="combo-badge">Solo Deal</span>
+              <h3 class="combo-title" style="margin-top: 10px;">Gamer Solo Fuel Pack</h3>
+            </div>
+            <div class="price-wrap" style="text-align: right;">
+              <span class="price-label">Only</span>
+              <div class="price-inr"><span>₹</span>349</div>
+            </div>
+          </div>
+          <p style="color: var(--text-muted); font-size: 0.92rem; margin-bottom: 20px;">
+            Enjoy a tasty meal while playing your favorite arcade games.
+          </p>
+          <ul class="combo-features">
+            <li><i class="fa-solid fa-circle-check"></i> 1 Burger or Grilled Club Sandwich</li>
+            <li><i class="fa-solid fa-circle-check"></i> 1 Portion of Peri-Peri French Fries</li>
+            <li><i class="fa-solid fa-circle-check"></i> 1 Chilled Beverage / Soft Drink</li>
+            <li><i class="fa-solid fa-circle-check"></i> <b>30 Arcade Game Play Credits</b> (Card Included)</li>
+          </ul>
+          <div style="margin-top: auto; padding-top: 20px;">
+            <button class="btn-primary" style="width: 100%; justify-content: center;" onclick="addToCart('c1')">
+              <i class="fa-solid fa-cart-plus"></i> Add Solo Combo to Cart (₹349)
+            </button>
+          </div>
+        </div>
+
+        <!-- Combo 2 -->
+        <div class="combo-card alt-card">
+          <div class="combo-header">
+            <div>
+              <span class="combo-badge alt">Group Deal (4 Friends)</span>
+              <h3 class="combo-title" style="margin-top: 10px;">Squad Fun Feast (For 4)</h3>
+            </div>
+            <div class="price-wrap" style="text-align: right;">
+              <span class="price-label">Only</span>
+              <div class="price-inr"><span>₹</span>1,199</div>
+            </div>
+          </div>
+          <p style="color: var(--text-muted); font-size: 0.92rem; margin-bottom: 20px;">
+            Perfect for IT colleagues at NSL SEZ, friends, and family groups.
+          </p>
+          <ul class="combo-features">
+            <li><i class="fa-solid fa-circle-check"></i> 2 Large 10" Handcrafted Pizzas</li>
+            <li><i class="fa-solid fa-circle-check"></i> 2 Baskets of Peri-Peri French Fries</li>
+            <li><i class="fa-solid fa-circle-check"></i> 4 Cool Blueberry Mojito Mocktails</li>
+            <li><i class="fa-solid fa-circle-check"></i> <b>1 Full Hour Snooker / Pool Table Session</b></li>
+            <li><i class="fa-solid fa-circle-check"></i> <b>60 Arcade Play Credits</b></li>
+          </ul>
+          <div style="margin-top: auto; padding-top: 20px;">
+            <button class="btn-primary btn-game" style="width: 100%; justify-content: center;" onclick="addToCart('c2')">
+              <i class="fa-solid fa-cart-plus"></i> Add Squad Combo to Cart (₹1,199)
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================================================================
+       7. How It Works
+       =================================================================== -->
+  <section id="how-it-works" class="process-section">
+    <div class="container">
+      <div style="text-align: center; margin-bottom: 48px;">
+        <span class="section-tag"><i class="fa-solid fa-mobile-screen-button"></i> 100% Cashless</span>
+        <h2 class="section-title">How to Order in <span>4 Easy Steps</span></h2>
+        <p class="section-subtitle" style="margin: 0 auto;">No waiting in queues. Order online, pay with Razorpay, and play right away.</p>
+      </div>
+
+      <div class="process-grid">
+        <div class="process-card">
+          <span class="step-num">01</span>
+          <div class="process-icon"><i class="fa-solid fa-cart-shopping"></i></div>
+          <h4>Pick Items</h4>
+          <p>Choose your games, food, or combos. All prices are in Indian Rupees (₹).</p>
+        </div>
+
+        <div class="process-card">
+          <span class="step-num">02</span>
+          <div class="process-icon"><i class="fa-solid fa-lock"></i></div>
+          <h4>Pay with Razorpay</h4>
+          <p>Pay quickly using UPI (GPay, PhonePe, Paytm), Debit/Credit card, or Net Banking.</p>
+        </div>
+
+        <div class="process-card">
+          <span class="step-num">03</span>
+          <div class="process-icon"><i class="fa-solid fa-qrcode"></i></div>
+          <h4>Get Your QR Pass</h4>
+          <p>Your digital pass and token number appear on your screen and are sent by SMS.</p>
+        </div>
+
+        <div class="process-card">
+          <span class="step-num">04</span>
+          <div class="process-icon"><i class="fa-solid fa-champagne-glasses"></i></div>
+          <h4>Play & Enjoy!</h4>
+          <p>Show your QR code at the game counter or food counter to enjoy your visit.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================================================================
+       8. Official Business & KYC Information (Matches Official Documents)
+       =================================================================== -->
+  <section id="compliance-info" class="compliance-section">
+    <div class="container">
+      <div class="compliance-grid">
+        <!-- Business About Us Card -->
+        <div class="about-card">
+          <span class="section-tag"><i class="fa-solid fa-building"></i> Registered Business</span>
+          <h3 style="font-size: 1.6rem; font-weight: 800; margin: 12px 0;">M/S. FUNN HUB</h3>
+          <p style="font-size: 0.95rem; color: var(--text-muted); line-height: 1.7; margin-bottom: 20px;">
+            <b>FUNN HUB</b> is a registered partnership firm operating an indoor amusement game zone and food cafeteria at NSL SEZ Arena, Uppal, Hyderabad.
+          </p>
+
+          <div style="background: #fff; border: 1px solid var(--border-color); border-radius: 12px; padding: 18px; margin-bottom: 20px;">
+            <div style="display: flex; justify-content: space-between; font-size: 0.88rem; margin-bottom: 8px;">
+              <span style="color: var(--text-muted);">Permanent Account Number (PAN):</span>
+              <b style="color: var(--text-main);">AALFF4908R</b>
+            </div>
+            <div style="display: flex; justify-content: space-between; font-size: 0.88rem; margin-bottom: 8px;">
+              <span style="color: var(--text-muted);">FSSAI Registration No:</span>
+              <b style="color: var(--text-main);">23626009000033</b>
+            </div>
+            <div style="display: flex; justify-content: space-between; font-size: 0.88rem; margin-bottom: 8px;">
+              <span style="color: var(--text-muted);">Managing Partner:</span>
+              <b style="color: var(--text-main);">Mr. Raju Maharaju</b>
+            </div>
+            <div style="display: flex; justify-content: space-between; font-size: 0.88rem;">
+              <span style="color: var(--text-muted);">Current Account (Axis Bank):</span>
+              <b style="color: var(--text-main);">926020037871517</b>
+            </div>
+          </div>
+
+          <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+            <button class="btn-secondary" onclick="openPolicyModal('about')">
+              <i class="fa-solid fa-circle-info"></i> Full About Us
+            </button>
+            <button class="btn-secondary" onclick="openPolicyModal('terms')">
+              <i class="fa-solid fa-file-contract"></i> Terms & Conditions
+            </button>
+          </div>
+        </div>
+
+        <!-- Contact & Support Desk Card -->
+        <div class="contact-card">
+          <span class="section-tag"><i class="fa-solid fa-headset"></i> Customer Helpline</span>
+          <h3 style="font-size: 1.6rem; font-weight: 800; margin: 12px 0;">Contact & Venue Address</h3>
+          
+          <div class="contact-info-list">
+            <div class="contact-item">
+              <div class="contact-icon"><i class="fa-solid fa-location-dot"></i></div>
+              <div class="contact-text">
+                <h5>Arena Address (Premises)</h5>
+                <p>Ground Floor Wing A, Building 2, NSL SEZ ARENA, Uppal, Circle 09 Uppal, Medchal Malkajgiri, Hyderabad, Telangana - 500039</p>
+              </div>
+            </div>
+
+            <div class="contact-item">
+              <div class="contact-icon"><i class="fa-solid fa-house"></i></div>
+              <div class="contact-text">
+                <h5>Registered Office</h5>
+                <p>H.No. 2-4-760, B N Reddy Nagar, Pochamma Temple, Cherlapally, Uppal, Rangareddy District, Telangana - 500051</p>
+              </div>
+            </div>
+
+            <div class="contact-item">
+              <div class="contact-icon"><i class="fa-solid fa-phone"></i></div>
+              <div class="contact-text">
+                <h5>Helpline Phone</h5>
+                <p><a href="tel:+919852237730" style="color: var(--primary); font-weight: 700;">+91 98522 37730</a> (10:00 AM – 10:00 PM IST)</p>
+              </div>
+            </div>
+
+            <div class="contact-item">
+              <div class="contact-icon"><i class="fa-solid fa-envelope"></i></div>
+              <div class="contact-text">
+                <h5>Official Email</h5>
+                <p><a href="mailto:mpowerdbboxes@gmail.com" style="color: var(--primary); font-weight: 700;">mpowerdbboxes@gmail.com</a></p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Quick Message Form -->
+          <form id="contact-form" style="display: flex; gap: 8px; margin-top: 16px;">
+            <input type="text" placeholder="Your phone number or query..." required style="flex: 1; padding: 10px 14px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); font-size: 0.9rem;">
+            <button type="submit" class="btn-primary" style="padding: 10px 18px; font-size: 0.9rem;">Send</button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================================================================
+       9. Footer
+       =================================================================== -->
+  <footer class="main-footer">
+    <div class="container">
+      <div class="footer-top">
+        <div class="footer-brand">
+          <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 14px;">
+            <div style="width: 36px; height: 36px; background: linear-gradient(135deg, var(--primary), var(--game-accent)); border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 1.1rem;">
+              <i class="fa-solid fa-gamepad"></i>
+            </div>
+            <h3 style="margin-bottom: 0;">FUNN HUB</h3>
+          </div>
+          <p>
+            Indoor amusement game zone and food cafe at NSL SEZ Arena, Uppal, Hyderabad. Enjoy snooker, pool, VR games, racing simulators, and delicious snacks.
+          </p>
+          <div style="font-size: 0.8rem; color: #64748b;">
+            Firm: <b>FUNN HUB</b> (Partnership Firm)<br>
+            PAN: AALFF4908R | FSSAI: 23626009000033
+          </div>
+        </div>
+
+        <div class="footer-col">
+          <h4>Indoor Games</h4>
+          <ul class="footer-links">
+            <li><a href="#catalog">Snooker & Pool Tables</a></li>
+            <li><a href="#catalog">VR Gaming Stations</a></li>
+            <li><a href="#catalog">Dual Racing Simulators</a></li>
+            <li><a href="#catalog">Air Hockey & Foosball</a></li>
+            <li><a href="#combos">Party Hall (50 Guests)</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-col">
+          <h4>Razorpay Policies</h4>
+          <ul class="footer-links">
+            <li><a onclick="openPolicyModal('terms')">Terms & Conditions</a></li>
+            <li><a onclick="openPolicyModal('privacy')">Privacy Policy</a></li>
+            <li><a onclick="openPolicyModal('refund')">Refund & Cancellation</a></li>
+            <li><a onclick="openPolicyModal('shipping')">Delivery Policy</a></li>
+            <li><a onclick="openPolicyModal('contact')">Contact Us</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-col">
+          <h4>Payment Methods</h4>
+          <p style="font-size: 0.85rem; margin-bottom: 10px;">
+            All payments in Indian Rupees (INR ₹) via Razorpay.
+          </p>
+          <div class="payment-badges-row">
+            <span class="pm-pill"><i class="fa-brands fa-google-pay"></i> GPay</span>
+            <span class="pm-pill"><i class="fa-solid fa-mobile-screen"></i> PhonePe</span>
+            <span class="pm-pill"><i class="fa-solid fa-wallet"></i> Paytm</span>
+            <span class="pm-pill"><i class="fa-solid fa-bolt"></i> UPI</span>
+            <span class="pm-pill"><i class="fa-regular fa-credit-card"></i> RuPay / Visa</span>
+            <span class="pm-pill"><i class="fa-solid fa-building-columns"></i> Net Banking</span>
+          </div>
+          <div style="margin-top: 16px; font-size: 0.78rem; color: #22c55e; display: flex; align-items: center; gap: 6px;">
+            <i class="fa-solid fa-shield-halved"></i> 256-Bit SSL Encrypted Checkout
+          </div>
+        </div>
+      </div>
+
+      <div class="footer-bottom">
+        <div>&copy; 2026 FUNN HUB. All Rights Reserved.</div>
+        <div class="footer-legal-bar">
+          <a onclick="openPolicyModal('terms')">Terms</a>
+          <a onclick="openPolicyModal('privacy')">Privacy</a>
+          <a onclick="openPolicyModal('refund')">Refunds</a>
+          <a onclick="openPolicyModal('shipping')">Delivery</a>
+          <a onclick="openPolicyModal('contact')">Contact</a>
+        </div>
+      </div>
+    </div>
+  </footer>
+
+  <!-- ===================================================================
+       10. Slide-Over Cart Drawer
+       =================================================================== -->
+  <div id="cart-overlay" class="cart-overlay" onclick="if(event.target === this) toggleCartDrawer(false)">
+    <div class="cart-drawer">
+      <div class="cart-header">
+        <h3><i class="fa-solid fa-bag-shopping" style="color: var(--primary);"></i> Your Order Cart</h3>
+        <button class="close-cart-btn" onclick="toggleCartDrawer(false)" aria-label="Close Cart">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+
+      <div class="cart-body">
+        <div id="cart-empty-view" class="empty-cart-view">
+          <i class="fa-solid fa-cart-shopping"></i>
+          <h4>Your cart is empty</h4>
+          <p style="font-size: 0.88rem; margin: 8px 0 20px;">Add some games or snacks to get started!</p>
+          <button class="btn-primary" onclick="toggleCartDrawer(false)">View Offerings</button>
+        </div>
+
+        <div id="cart-items-list" class="cart-items-list">
+          <!-- Rendered by JS -->
+        </div>
+      </div>
+
+      <div id="cart-footer-view" class="cart-footer" style="display: none;">
+        <div class="coupon-row">
+          <input type="text" id="coupon-input" placeholder="Coupon Code (e.g. FUNN10)">
+          <button id="btn-apply-coupon" class="coupon-btn">Apply</button>
+        </div>
+
+        <div class="bill-rows">
+          <div class="bill-row">
+            <span>Item Subtotal</span>
+            <span id="bill-subtotal">₹0</span>
+          </div>
+          <div class="bill-row">
+            <span>GST (5%)</span>
+            <span id="bill-gst">₹0</span>
+          </div>
+          <div class="bill-row" id="bill-discount-row" style="display: none; color: var(--success);">
+            <span>Coupon Discount</span>
+            <span id="bill-discount">-₹0</span>
+          </div>
+          <div class="bill-row total-row">
+            <span>Total to Pay (INR)</span>
+            <span id="bill-total" style="color: var(--primary);">₹0</span>
+          </div>
+        </div>
+
+        <!-- Checkout Button -->
+        <button class="checkout-btn" onclick="openCheckout()">
+          <i class="fa-solid fa-lock"></i>
+          <span>Proceed to Pay via Razorpay</span>
+        </button>
+        
+        <div class="razorpay-guarantee-note">
+          <i class="fa-solid fa-shield-halved" style="color: #22c55e;"></i>
+          <span>Official Razorpay Payment Gateway &bull; UPI &bull; Cards &bull; NetBanking</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================================================================
+       11. Razorpay Checkout Modal
+       =================================================================== -->
+  <div id="payment-modal" class="payment-modal-backdrop" onclick="if(event.target === this) closeCheckout()">
+    <div class="razorpay-frame-box">
+      <div class="razorpay-frame-header">
+        <div class="rzp-merchant-info">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <i class="fa-solid fa-shield-heart" style="color: #38bdf8; font-size: 1.2rem;"></i>
+            <h4>FUNN HUB</h4>
+          </div>
+          <p id="rzp-item-count-label">Indoor Games & Food Pass</p>
+        </div>
+        <div class="rzp-amount-badge">
+          <span>Total Amount</span>
+          <b id="rzp-pay-amount">₹0</b>
+        </div>
+        <button class="close-payment-btn" onclick="closeCheckout()" title="Close Checkout">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+
+      <div class="payment-modal-body">
+        <div class="customer-input-group">
+          <div class="form-row-2">
+            <div>
+              <label class="input-label">Customer Name *</label>
+              <input type="text" id="cust-name" class="customer-input" placeholder="Your Name" value="Guest User">
+            </div>
+            <div>
+              <label class="input-label">Mobile Number (For SMS Pass) *</label>
+              <input type="tel" id="cust-phone" class="customer-input" placeholder="10-digit number" value="9852237730" maxlength="10">
+            </div>
+          </div>
+          <div class="form-row-2" style="margin-top: 10px;">
+            <div>
+              <label class="input-label">Email ID (For Receipt)</label>
+              <input type="email" id="cust-email" class="customer-input" placeholder="name@email.com" value="customer@example.com">
+            </div>
+            <div>
+              <label class="input-label">Service Type</label>
+              <select id="cust-order-type" class="customer-input">
+                <option value="dine-in">Dine-In / Table Service</option>
+                <option value="counter-pickup">Food Counter Pickup</option>
+                <option value="game-pass">Indoor Game Counter Check-in</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <label class="input-label">Select Payment Method</label>
+        <div class="payment-method-tabs">
+          <div class="pm-tab active" data-tab="upi" onclick="handlePaymentMethodTab('upi')">
+            <i class="fa-solid fa-qrcode" style="color: #0284c7;"></i>
+            <span>UPI / QR</span>
+          </div>
+          <div class="pm-tab" data-tab="cards" onclick="handlePaymentMethodTab('cards')">
+            <i class="fa-regular fa-credit-card" style="color: #0d9488;"></i>
+            <span>Cards</span>
+          </div>
+          <div class="pm-tab" data-tab="netbanking" onclick="handlePaymentMethodTab('netbanking')">
+            <i class="fa-solid fa-building-columns" style="color: #6366f1;"></i>
+            <span>NetBanking</span>
+          </div>
+          <div class="pm-tab" data-tab="wallets" onclick="handlePaymentMethodTab('wallets')">
+            <i class="fa-solid fa-wallet" style="color: #ea580c;"></i>
+            <span>Wallets</span>
+          </div>
+        </div>
+
+        <!-- UPI Panel -->
+        <div id="panel-upi" class="payment-view-panel active">
+          <div class="upi-apps-row">
+            <div class="upi-app-btn">
+              <i class="fa-brands fa-google" style="color: #ea4335; font-size: 1.4rem;"></i>
+              <span>Google Pay</span>
+            </div>
+            <div class="upi-app-btn">
+              <i class="fa-solid fa-bolt" style="color: #5f259f; font-size: 1.4rem;"></i>
+              <span>PhonePe</span>
+            </div>
+            <div class="upi-app-btn">
+              <i class="fa-solid fa-wallet" style="color: #00b9f5; font-size: 1.4rem;"></i>
+              <span>Paytm UPI</span>
+            </div>
+          </div>
+
+          <div class="upi-qr-box">
+            <img id="upi-qr-image" src="" alt="Dynamic UPI QR" onerror="handleQrError(this, 'upi')">
+            <p style="font-size: 0.8rem; color: var(--text-muted); font-weight: 600;">
+              Scan this QR using any UPI App (GPay, PhonePe, Paytm, BHIM)
+            </p>
+          </div>
+        </div>
+
+        <!-- Cards Panel -->
+        <div id="panel-cards" class="payment-view-panel">
+          <div style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 16px;">
+            <input type="text" class="customer-input" placeholder="Card Number (4000 1234 5678 9010)" value="4111 2222 3333 4444">
+            <div class="form-row-2">
+              <input type="text" class="customer-input" placeholder="MM / YY" value="12/28">
+              <input type="password" class="customer-input" placeholder="CVV" value="123" maxlength="4">
+            </div>
+            <input type="text" class="customer-input" placeholder="Name on Card" value="Raju Maharaju">
+          </div>
+        </div>
+
+        <!-- NetBanking Panel -->
+        <div id="panel-netbanking" class="payment-view-panel">
+          <div style="margin-bottom: 16px;">
+            <select class="customer-input" style="padding: 12px;">
+              <option>Axis Bank (Direct Integration)</option>
+              <option>State Bank of India (SBI)</option>
+              <option>HDFC Bank</option>
+              <option>ICICI Bank</option>
+              <option>Kotak Mahindra Bank</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Wallets Panel -->
+        <div id="panel-wallets" class="payment-view-panel">
+          <div style="margin-bottom: 16px;">
+            <select class="customer-input" style="padding: 12px;">
+              <option>Paytm Wallet</option>
+              <option>PhonePe Wallet</option>
+              <option>Amazon Pay</option>
+              <option>Mobikwik</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Payment Action Button -->
+        <button id="btn-confirm-pay" class="btn-simulate-pay" onclick="processRazorpayPayment()">
+          <i class="fa-solid fa-lock"></i>
+          <span>Pay <span id="rzp-sim-button-amt">₹0</span> with Razorpay</span>
+        </button>
+      </div>
+
+      <div class="rzp-security-footer">
+        <div style="display: flex; align-items: center; gap: 6px;">
+          <i class="fa-solid fa-shield-check" style="color: #0284c7;"></i>
+          <span>Powered by <b>Razorpay PG</b> &bull; PCI-DSS Level 1 Certified</span>
+        </div>
+        <span>INR (₹)</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================================================================
+       12. Order Success & Digital Pass / Ticket Modal
+       =================================================================== -->
+  <div id="receipt-modal" class="payment-modal-backdrop" onclick="if(event.target === this) closeReceipt()">
+    <div class="receipt-modal">
+      <div class="success-check-icon">
+        <i class="fa-solid fa-check"></i>
+      </div>
+      <h3 style="font-size: 1.5rem; font-weight: 800; color: var(--text-main); margin-bottom: 6px;">Payment Successful!</h3>
+      <p style="font-size: 0.9rem; color: var(--text-muted);">
+        Your order and game pass are confirmed at FUNN HUB.
+      </p>
+
+      <div class="receipt-ticket-card">
+        <div class="ticket-header">
+          <div>
+            <div class="ticket-id" id="receipt-order-id">ORD-FH-123456</div>
+            <div class="ticket-date" id="receipt-date">Oct 29, 2026, 5:30 PM</div>
+          </div>
+          <div style="text-align: right;">
+            <span style="background: #dcfce7; color: #166534; font-size: 0.72rem; font-weight: 800; padding: 2px 8px; border-radius: 4px;">PAID via Razorpay</span>
+            <div style="font-size: 0.72rem; color: #64748b; margin-top: 3px;" id="receipt-payment-id">pay_rzp_mock123</div>
+          </div>
+        </div>
+
+        <div style="font-size: 0.85rem; margin-bottom: 12px; color: var(--text-body);">
+          <div>Customer: <b id="receipt-cust-name">Guest User</b> (<span id="receipt-cust-phone">9852237730</span>)</div>
+          <div>Venue: <b>FUNN HUB - NSL SEZ Arena, Uppal</b></div>
+          <div>Service: <b id="receipt-order-type">DINE-IN</b></div>
+        </div>
+
+        <div id="receipt-items-summary" style="margin-bottom: 12px; max-height: 120px; overflow-y: auto;">
+          <!-- Injected via JS -->
+        </div>
+
+        <div style="display: flex; justify-content: space-between; font-size: 1.05rem; font-weight: 800; border-top: 1px solid #cbd5e1; padding-top: 8px;">
+          <span>Total Paid:</span>
+          <span id="receipt-amount" style="color: var(--primary);">₹0</span>
+        </div>
+
+        <div class="ticket-qr">
+          <img id="receipt-qr-img" src="" alt="Ticket Redemption QR" onerror="handleQrError(this, 'receipt')">
+          <p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 4px;">Show this QR at the counter to start your game or collect food</p>
+        </div>
+      </div>
+
+      <div style="display: flex; gap: 12px;">
+        <button class="btn-secondary" style="flex: 1;" onclick="window.print()">
+          <i class="fa-solid fa-print"></i> Print Receipt
+        </button>
+        <button class="btn-primary" style="flex: 1;" onclick="closeReceipt()">
+          <i class="fa-solid fa-circle-check"></i> Done
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================================================================
+       13. Policy & Compliance Modal (Razorpay Mandatory Documents)
+       =================================================================== -->
+  <div id="policy-modal" class="payment-modal-backdrop" onclick="if(event.target === this) closePolicyModal()">
+    <div class="policy-modal-box">
+      <div class="policy-modal-header">
+        <h3 id="policy-modal-title">Terms & Conditions</h3>
+        <button class="close-cart-btn" onclick="closePolicyModal()" aria-label="Close Policy Modal">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+
+      <div id="policy-modal-body" class="policy-modal-content">
+        <!-- Injected via app.js -->
+      </div>
+
+      <div class="policy-modal-footer">
+        <button class="btn-secondary" onclick="closePolicyModal()">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main JavaScript Logic -->
+  <script src="app.js"></script>
+</body>
+</html>
