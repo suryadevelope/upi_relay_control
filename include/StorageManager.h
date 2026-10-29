@@ -35,19 +35,18 @@ public:
         settings.relayActiveHigh = DEFAULT_RELAY_ACTIVE_HIGH;
         settings.debugMode = DEFAULT_DEBUG_MODE;
 
-        settings.displayType = DISPLAY_ST7789;
+        settings.displayType = DEFAULT_DISPLAY_TYPE; // ILI9341 for 2.8" SPI TFT
         settings.tftCS = DEFAULT_TFT_CS;
         settings.tftDC = DEFAULT_TFT_DC;
         settings.tftRST = DEFAULT_TFT_RST;
         settings.tftBL = DEFAULT_TFT_BL;
         settings.tftRotation = 1; // Landscape
 
-        // Default Payment Rules
-        settings.ruleCount = 4;
-        settings.rules[0] = { 10.0f, 15 };
-        settings.rules[1] = { 20.0f, 30 };
-        settings.rules[2] = { 30.0f, 60 };
-        settings.rules[3] = { 50.0f, 120 };
+        // Default Payment Rules: 1 Rupee for 3 Seconds by default
+        settings.ruleCount = 3;
+        settings.rules[0] = { 1.0f, 3 };   // Rs. 1 -> 3 Seconds
+        settings.rules[1] = { 5.0f, 15 };  // Rs. 5 -> 15 Seconds
+        settings.rules[2] = { 10.0f, 30 }; // Rs. 10 -> 30 Seconds
     }
 
     void loadSettings() {
@@ -72,7 +71,7 @@ public:
         settings.relayActiveHigh = prefs.getBool("relayActiveHigh", DEFAULT_RELAY_ACTIVE_HIGH);
         settings.debugMode = prefs.getBool("debugMode", DEFAULT_DEBUG_MODE);
 
-        settings.displayType = prefs.getInt("dispType", DISPLAY_ST7789);
+        settings.displayType = prefs.getInt("dispType_v2", DEFAULT_DISPLAY_TYPE);
         settings.tftCS = prefs.getInt("tftCS", DEFAULT_TFT_CS);
         settings.tftDC = prefs.getInt("tftDC", DEFAULT_TFT_DC);
         settings.tftRST = prefs.getInt("tftRST", DEFAULT_TFT_RST);
@@ -80,19 +79,20 @@ public:
         settings.tftRotation = prefs.getInt("tftRot", 1);
 
         settings.ruleCount = prefs.getInt("ruleCount", 0);
-        if (settings.ruleCount <= 0 || settings.ruleCount > MAX_RULES) {
-            settings.ruleCount = 4;
-            settings.rules[0] = { 10.0f, 15 };
-            settings.rules[1] = { 20.0f, 30 };
-            settings.rules[2] = { 30.0f, 60 };
-            settings.rules[3] = { 50.0f, 120 };
+        if (settings.ruleCount <= 0 || settings.ruleCount > MAX_RULES || !prefs.isKey("rules_v3")) {
+            settings.ruleCount = 3;
+            settings.rules[0] = { 1.0f, 3 };
+            settings.rules[1] = { 5.0f, 15 };
+            settings.rules[2] = { 10.0f, 30 };
+            saveSettings();
+            prefs.putBool("rules_v3", true);
         } else {
             for (int i = 0; i < settings.ruleCount; i++) {
                 char keyA[16], keyD[16];
                 snprintf(keyA, sizeof(keyA), "r_%d_amt", i);
                 snprintf(keyD, sizeof(keyD), "r_%d_dur", i);
-                settings.rules[i].amount = prefs.getFloat(keyA, 20.0f);
-                settings.rules[i].durationSec = prefs.getUInt(keyD, 30);
+                settings.rules[i].amount = prefs.getFloat(keyA, 1.0f);
+                settings.rules[i].durationSec = prefs.getUInt(keyD, 3);
             }
         }
 
@@ -114,6 +114,7 @@ public:
         prefs.putBool("debugMode", settings.debugMode);
 
         prefs.putInt("dispType", settings.displayType);
+        prefs.putInt("dispType_v2", settings.displayType);
         prefs.putInt("tftCS", settings.tftCS);
         prefs.putInt("tftDC", settings.tftDC);
         prefs.putInt("tftRST", settings.tftRST);
@@ -195,8 +196,8 @@ public:
                 return settings.rules[i].durationSec;
             }
         }
-        // Fallback default: 30 seconds
-        return 30;
+        // Fallback default: 3 seconds
+        return 3;
     }
 };
 

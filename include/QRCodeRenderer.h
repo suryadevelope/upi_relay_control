@@ -5,76 +5,20 @@
 #include <qrcode.h>   // ESP-IDF built-in QR encoder (esp_qrcode_*)
 #include <Adafruit_GFX.h>
 
-// Max QR version to allow. Version 15 at ECC LOW holds ~520 bytes, which is
-// plenty of headroom for UPI payloads; the encoder picks the smallest fit.
+// Max QR version to allow (Version 15 ECC LOW holds ~520 bytes, plenty for UPI payloads)
 #define QR_MAX_VERSION 15
-
-// Serial terminals are usually light text on a dark background, so a "filled"
-// block shows up light. Inverting draws light modules as blocks, giving dark
-// modules on a light field - the polarity phone scanners expect.
-// Set to false if your terminal has a light background.
-#define SERIAL_QR_INVERT true
 
 class QRCodeRenderer {
 private:
-    // Each pattern represents a 2x2 group of QR modules.
-    // Bit 0 = top-left, bit 1 = top-right,
-    // bit 2 = bottom-left, bit 3 = bottom-right.
-    static const char* pattern(uint8_t p) {
-        static const char* patterns[16] = {
-            "  ",
-            "▀ ",
-            " ▀",
-            "▀▀",
-            "▄ ",
-            "█ ",
-            "▄▀",
-            "█▀",
-            " ▄",
-            "▀▄",
-            " █",
-            "▀█",
-            "▄▄",
-            "█▄",
-            "▄█",
-            "██"
-        };
-        return patterns[p & 0x0F];
-    }
-
-    // esp_qrcode_get_module() returns false outside the symbol, so the border
-    // is treated as light modules automatically.
-    static bool filled(esp_qrcode_handle_t qr, int x, int y) {
-        bool dark = esp_qrcode_get_module(qr, x, y);
-        return SERIAL_QR_INVERT ? !dark : dark;
-    }
-
-    static void printQR(esp_qrcode_handle_t qr) {
-        int size = esp_qrcode_get_size(qr);
-        const int border = 4;
-
-        Serial.println();
-        for (int y = -border; y < size + border; y += 2) {
-            for (int x = -border; x < size + border; x += 2) {
-                uint8_t p = 0;
-                if (filled(qr, x, y))         p |= 1;
-                if (filled(qr, x + 1, y))     p |= 2;
-                if (filled(qr, x, y + 1))     p |= 4;
-                if (filled(qr, x + 1, y + 1)) p |= 8;
-                Serial.print(pattern(p));
-            }
-            Serial.println();
-        }
-        Serial.println();
-    }
-
-    // esp_qrcode display callbacks take no user pointer, so the TFT target is
-    // passed through these statics for the duration of one generate call.
     struct DisplayCtx {
         Adafruit_GFX* display;
-        int centerX, centerY, maxPixelSize;
-        uint16_t fgColor, bgColor;
+        int cardX;
+        int cardY;
+        int cardSize;
+        uint16_t fgColor;
+        uint16_t bgColor;
     };
+
     static DisplayCtx& displayCtx() {
         static DisplayCtx ctx;
         return ctx;
@@ -82,27 +26,42 @@ private:
 
     static void drawToDisplay(esp_qrcode_handle_t qr) {
         DisplayCtx& c = displayCtx();
-        int qrSize = esp_qrcode_get_size(qr);
-        int quietZone = 2; // 2 modules quiet zone
-        int totalModules = qrSize + (quietZone * 2);
+        if (!c.display) return;
 
-        int scale = c.maxPixelSize / totalModules;
+        int qrSize = esp_qrcode_get_size(qr); // Number of modules across (e.g. 33, 37, 41)
+        if (qrSize <= 0) return;
+
+        // Calculate maximum integer module scale that fits inside card with quiet zone margin
+        // Ensure at least 8px margin (quiet zone) on all sides
+        int maxUsable = c.cardSize - 16;
+        int scale = maxUsable / qrSize;
         if (scale < 1) scale = 1;
+        if (scale > 5) scale = 5;
 
-        int actualWidth = totalModules * scale;
-        int startX = c.centerX - (actualWidth / 2);
-        int startY = c.centerY - (actualWidth / 2);
+        int actualQrPixelWidth = qrSize * scale;
+        // Center the QR symbol exactly inside the white card
+        int startX = c.cardX + (c.cardSize - actualQrPixelWidth) / 2;
+        int startY = c.cardY + (c.cardSize - actualQrPixelWidth) / 2;
 
-        // Draw quiet zone background
-        c.display->fillRect(startX, startY, actualWidth, actualWidth, c.bgColor);
+        // 1. Draw solid, high-contrast white card background with rounded corners
+        c.display->fillRoundRect(c.cardX, c.cardY, c.cardSize, c.cardSize, 6, c.bgColor);
+        c.display->drawRoundRect(c.cardX, c.cardY, c.cardSize, c.cardSize, 6, 0x07FF); // Cyan border
 
-        // Render QR modules
+        // 2. Render black QR modules with horizontal run-length batching for fast SPI transfer
         for (int y = 0; y < qrSize; y++) {
-            for (int x = 0; x < qrSize; x++) {
+            int py = startY + (y * scale);
+            int x = 0;
+            while (x < qrSize) {
                 if (esp_qrcode_get_module(qr, x, y)) {
-                    int px = startX + ((x + quietZone) * scale);
-                    int py = startY + ((y + quietZone) * scale);
-                    c.display->fillRect(px, py, scale, scale, c.fgColor);
+                    int runStart = x;
+                    while (x < qrSize && esp_qrcode_get_module(qr, x, y)) {
+                        x++;
+                    }
+                    int runLen = x - runStart;
+                    int px = startX + (runStart * scale);
+                    c.display->fillRect(px, py, runLen * scale, scale, c.fgColor);
+                } else {
+                    x++;
                 }
             }
         }
@@ -117,13 +76,13 @@ private:
     }
 
 public:
-    // Render QR Code onto Adafruit GFX display
+    // Render QR Code onto Adafruit GFX display inside a high-contrast white card
     static bool renderToDisplay(Adafruit_GFX* display, const String& text,
-                                int centerX, int centerY, int maxPixelSize,
-                                uint16_t fgColor, uint16_t bgColor) {
+                                int cardX, int cardY, int cardSize,
+                                uint16_t fgColor = 0x0000, uint16_t bgColor = 0xFFFF) {
         if (!display || text.length() == 0) return false;
 
-        displayCtx() = { display, centerX, centerY, maxPixelSize, fgColor, bgColor };
+        displayCtx() = { display, cardX, cardY, cardSize, fgColor, bgColor };
         esp_err_t result = generate(drawToDisplay, text);
         if (result != ESP_OK) {
             Serial.printf("[QR] Failed to generate QR code for length %d (err: %d)\n",
@@ -133,25 +92,9 @@ public:
         return true;
     }
 
-    // Print QR Code to Serial Monitor for Debugging & Screen Scanning
+    // Serial monitor QR code printing is disabled per user request
     static void printToSerial(const String& text, float amount, uint32_t durationSec, const String& qrId) {
-        Serial.println();
-        Serial.println("========================================================================");
-        Serial.println(" [DEBUG MODE] SMART PAYMENT GATEWAY - SERIAL QR CODE");
-        Serial.println("========================================================================");
-        Serial.printf(" QR ID:        %s\n", qrId.length() > 0 ? qrId.c_str() : "N/A");
-        Serial.printf(" Amount:       Rs. %.2f (Paise: %d)\n", amount, (int)(amount * 100));
-        Serial.printf(" Duration:     %u Seconds\n", durationSec);
-        Serial.printf(" Payload URL:  %s\n", text.c_str());
-        Serial.println("------------------------------------------------------------------------");
-        Serial.println(" SCAN QR CODE DIRECTLY FROM TERMINAL SCREEN (Google Pay / PhonePe / Paytm):");
-        Serial.println("------------------------------------------------------------------------");
-
-        esp_err_t result = generate(printQR, text);
-        if (result != ESP_OK) {
-            Serial.printf("[DEBUG-QR] QR generation failed: %d\n", (int)result);
-        }
-        Serial.println("========================================================================\n");
+        // Disabled: Serial Monitor QR printing disabled. QR code is displayed on the 2.8" TFT display.
     }
 };
 

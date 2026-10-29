@@ -7,11 +7,15 @@
 // System Hardware Pin Assignments (Default)
 // ==========================================
 
+// Physical Start / Payment Trigger Pin (Active LOW)
+// When pin D25 goes LOW, a new payment is initiated similar to webpage start button
+#define DEFAULT_PAYMENT_TRIGGER_PIN 25
+
 // Relay Pin
 #define DEFAULT_RELAY_PIN          26
 #define DEFAULT_RELAY_ACTIVE_HIGH  true
 
-// 2.5-inch TFT Display SPI Pins
+// 2.8-inch SPI Touch Screen Module TFT Display Pins (240x320)
 // Standard ESP32 VSPI default pins:
 // MOSI = GPIO 23, SCLK = GPIO 18, MISO = GPIO 19
 #define DEFAULT_TFT_MOSI           23
@@ -27,6 +31,7 @@ enum DisplayDriverType {
     DISPLAY_ST7789 = 0,
     DISPLAY_ILI9341 = 1
 };
+#define DEFAULT_DISPLAY_TYPE       DISPLAY_ILI9341
 
 // ==========================================
 // Default Network & Security Credentials
@@ -42,8 +47,8 @@ enum DisplayDriverType {
 #define DEFAULT_BACKEND_URL        "http://10.13.137.189:3000"
 #define DEFAULT_DEVICE_KEY         "sg_device_secret_key_123"
 
-// Default Debug Mode (enables ASCII/UTF-8 QR printing to Serial Monitor)
-#define DEFAULT_DEBUG_MODE         true
+// Default Debug Mode (QR code is rendered on TFT; serial QR printing disabled)
+#define DEFAULT_DEBUG_MODE         false
 
 // Maximum amount-to-duration rules
 #define MAX_RULES                  10

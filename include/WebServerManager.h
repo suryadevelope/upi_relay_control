@@ -579,11 +579,11 @@ input:checked + .slider:before { transform: translateX(20px); }
         
         <div class="form-group">
           <label>Custom Amount (₹)</label>
-          <input type="number" id="customAmount" placeholder="e.g. 20.00" step="1">
+          <input type="number" id="customAmount" value="1" placeholder="e.g. 1.00" step="1">
         </div>
         <div class="form-group">
           <label>Duration (Seconds)</label>
-          <input type="number" id="customDuration" placeholder="e.g. 30" step="1">
+          <input type="number" id="customDuration" value="3" placeholder="e.g. 3" step="1">
         </div>
         <div style="display: flex; gap: 10px;">
           <button class="btn btn-primary" style="flex: 1;" onclick="triggerPayment()">Generate Payment QR</button>
