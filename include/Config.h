@@ -7,8 +7,8 @@
 // System Hardware Pin Assignments (Default)
 // ==========================================
 
-// Physical Start / Payment Trigger Pin (Active LOW)
-// When pin D25 goes LOW, a new payment is initiated similar to webpage start button
+// Single Physical Control Button (Active LOW)
+// Short press cycles the selected amount; hold for 1.5s to start the payment.
 #define DEFAULT_PAYMENT_TRIGGER_PIN 25
 
 // Relay Pin
@@ -44,7 +44,8 @@ enum DisplayDriverType {
 #define DEFAULT_ADMIN_PASS         "admin123"
 
 // Default Backend URL and Device Key
-#define DEFAULT_BACKEND_URL        "http://10.13.137.189:3000"
+// Set this to the LAN IP of the PC running backend/src/server.js.
+#define DEFAULT_BACKEND_URL        "http://10.51.153.189:3000"
 #define DEFAULT_DEVICE_KEY         "sg_device_secret_key_123"
 
 // Default Debug Mode (QR code is rendered on TFT; serial QR printing disabled)

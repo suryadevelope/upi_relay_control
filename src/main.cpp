@@ -30,14 +30,25 @@ unsigned long successStartTime = 0;
 bool successScreenReturned = false;
 bool lastWifiState = false;
 
-// Physical Trigger Button (D25)
+// Selected payment rule (short press cycles this on the home screen)
+int selectedRuleIndex = 0;
+
+// Single Physical Control Button (D25)
+// - Short press: cycle to the next configured amount
+// - Long press : start payment for the selected amount
 #define BUTTON_TRIGGER_PIN DEFAULT_PAYMENT_TRIGGER_PIN
+#define BUTTON_DEBOUNCE_MS 40
+#define BUTTON_LONG_PRESS_MS 1500
 
 // Function Prototypes
 bool triggerNewPayment(float amount, uint32_t duration, String& outError);
 void cancelActivePayment();
+void normalizeSelectedRule();
+void refreshHomeScreen();
 void checkPhysicalButton();
-void handlePhysicalButtonTrigger();
+void handleButtonShortPress();
+void handleButtonLongPress();
+void startSelectedPayment();
 
 void setup() {
     Serial.begin(115200);
@@ -53,9 +64,10 @@ void setup() {
     // 2. Initialize Relay Controller (Fail-safe OFF)
     relay.begin(s.relayPin, s.relayActiveHigh);
 
-    // 3. Initialize Physical Start Button (D25, Active LOW with Internal Pull-up)
+    // 3. Initialize Single Physical Button (D25, Active LOW with Internal Pull-up)
     pinMode(BUTTON_TRIGGER_PIN, INPUT_PULLUP);
-    Serial.printf("[MAIN] Physical trigger button initialized on GPIO %d (Active LOW)\n", BUTTON_TRIGGER_PIN);
+    Serial.printf("[MAIN] Single button initialized on GPIO %d (Active LOW)\n", BUTTON_TRIGGER_PIN);
+    Serial.println("[MAIN] Button controls: SHORT press = next amount, LONG press (1.5s) = start payment");
 
     // 4. Initialize 2.8-inch SPI TFT Display (ILI9341 240x320)
     display.begin(s);
@@ -74,9 +86,8 @@ void setup() {
 
     // 8. Ready State -> SHOW ONLY HOME PAGE
     relay.setState(STATE_READY);
-    lastWifiState = network.isConnectedToInternet();
-    display.showHomeScreen(String(s.apSSID), network.getStaIP(), lastWifiState, 
-                           s.ruleCount, s.rules);
+    selectedRuleIndex = 0;
+    refreshHomeScreen();
 
     Serial.printf("[MAIN] System ready. Admin Hotspot: '%s' (http://192.168.4.1)\n", s.apSSID);
     Serial.printf("[MAIN] Display Mode: HOME -> QR+TIMER -> SUCCESS/FAILED only.\n");
@@ -86,6 +97,13 @@ void loop() {
     // 1. Maintain background services
     network.update();
     webServer.update();
+
+    // Apply backend URL/key changes saved from the admin portal without rebooting
+    if (webServer.consumeSettingsChanged()) {
+        DeviceSettings& cfg = storage.getSettings();
+        paymentClient.setConfig(cfg.backendUrl, cfg.deviceKey);
+        Serial.printf("[MAIN] Backend config applied: %s\n", cfg.backendUrl);
+    }
 
     // 2. Check physical trigger button (GPIO 25 LOW)
     checkPhysicalButton();
@@ -100,10 +118,7 @@ void loop() {
 
         display.updatePaymentSuccessRelayStatus(0);
         delay(600);
-
-        DeviceSettings& s = storage.getSettings();
-        display.showHomeScreen(String(s.apSSID), network.getStaIP(), 
-                               network.isConnectedToInternet(), s.ruleCount, s.rules);
+        refreshHomeScreen();
     }
 
     GatewayState currentState = relay.getState();
@@ -111,14 +126,10 @@ void loop() {
     // 4. State Machine Handling
     switch (currentState) {
         case STATE_READY: {
-            // Update home page if Wi-Fi connection status changes
+            // Refresh home page if Wi-Fi status changes (also picks up rule changes)
             bool curWifi = network.isConnectedToInternet();
             if (curWifi != lastWifiState || (millis() - lastDisplayUpdate > 10000)) {
-                lastWifiState = curWifi;
-                lastDisplayUpdate = millis();
-                DeviceSettings& s = storage.getSettings();
-                display.showHomeScreen(String(s.apSSID), network.getStaIP(), 
-                                       lastWifiState, s.ruleCount, s.rules);
+                refreshHomeScreen();
             }
             break;
         }
@@ -208,9 +219,7 @@ void loop() {
                 activeAmount = 0.0f;
                 activeDuration = 0;
                 relay.setState(STATE_READY);
-                DeviceSettings& s = storage.getSettings();
-                display.showHomeScreen(String(s.apSSID), network.getStaIP(), 
-                                       network.isConnectedToInternet(), s.ruleCount, s.rules);
+                refreshHomeScreen();
             }
             break;
         }
@@ -276,70 +285,120 @@ void cancelActivePayment() {
     activeAmount = 0.0f;
     activeDuration = 0;
     relay.setState(STATE_READY);
-    DeviceSettings& s = storage.getSettings();
-    display.showHomeScreen(String(s.apSSID), network.getStaIP(), 
-                           network.isConnectedToInternet(), s.ruleCount, s.rules);
+    refreshHomeScreen();
 }
 
-// Check physical push button connected to GPIO 25 (Active LOW with debounce)
+// Keep the selected rule inside the configured range (rules can change from the web UI)
+void normalizeSelectedRule() {
+    DeviceSettings& s = storage.getSettings();
+    if (s.ruleCount <= 0) {
+        selectedRuleIndex = 0;
+        return;
+    }
+    if (selectedRuleIndex < 0) selectedRuleIndex = 0;
+    if (selectedRuleIndex >= s.ruleCount) selectedRuleIndex = s.ruleCount - 1;
+}
+
+// Redraw the home page with the currently selected amount
+void refreshHomeScreen() {
+    normalizeSelectedRule();
+    DeviceSettings& s = storage.getSettings();
+    bool connected = network.isConnectedToInternet();
+    lastWifiState = connected;
+    lastDisplayUpdate = millis();
+    display.showHomeScreen(String(s.apSSID), network.getStaIP(), connected,
+                           s.ruleCount, s.rules, selectedRuleIndex);
+}
+
+// Non-blocking button reader: debounces, detects short and long presses.
+// A long press fires once while the button is still held.
 void checkPhysicalButton() {
     static int lastReading = HIGH;
-    static int buttonState = HIGH;
-    static unsigned long lastDebounceTime = 0;
-    const unsigned long debounceDelay = 50; // 50ms debounce time
+    static bool stablePressed = false;
+    static bool longPressHandled = false;
+    static unsigned long lastChangeTime = 0;
+    static unsigned long pressStartTime = 0;
 
     int reading = digitalRead(BUTTON_TRIGGER_PIN);
+    unsigned long now = millis();
 
     if (reading != lastReading) {
-        lastDebounceTime = millis();
+        lastReading = reading;
+        lastChangeTime = now;
+        return;
     }
 
-    if ((millis() - lastDebounceTime) > debounceDelay) {
-        if (reading != buttonState) {
-            buttonState = reading;
+    if (now - lastChangeTime < BUTTON_DEBOUNCE_MS) return;
 
-            // Trigger when button is pressed (becomes LOW)
-            if (buttonState == LOW) {
-                handlePhysicalButtonTrigger();
-            }
+    bool pressed = (reading == LOW);
+
+    if (pressed && !stablePressed) {
+        // Fresh press
+        stablePressed = true;
+        longPressHandled = false;
+        pressStartTime = now;
+    } else if (pressed && stablePressed) {
+        // Still held: fire the long press exactly once at the threshold
+        if (!longPressHandled && (now - pressStartTime >= BUTTON_LONG_PRESS_MS)) {
+            longPressHandled = true;
+            handleButtonLongPress();
+        }
+    } else if (!pressed && stablePressed) {
+        // Released: a short press advances the amount selection
+        stablePressed = false;
+        bool wasLongPress = longPressHandled;
+        longPressHandled = false;
+        if (!wasLongPress) {
+            handleButtonShortPress();
         }
     }
-
-    lastReading = reading;
 }
 
-// Initiate new payment when D25 becomes LOW (similar to webpage start button)
-void handlePhysicalButtonTrigger() {
+// Short press: cycle through the configured amount/duration rules
+void handleButtonShortPress() {
     GatewayState currentState = relay.getState();
-
-    // If relay is currently energized, ignore trigger
-    if (currentState == STATE_RELAY_ON) {
-        Serial.println("[BUTTON] D25 pressed, but relay is currently active. Ignoring.");
+    if (currentState != STATE_READY) {
+        Serial.printf("[BUTTON] Short press ignored in state %s\n", stateToString(currentState));
         return;
     }
 
-    // If a QR payment session is already active, ignore to avoid accidental cancellation
-    if (currentState == STATE_QR_ACTIVE) {
-        Serial.printf("[BUTTON] D25 pressed, but QR session is already active (ID: %s). Ignoring.\n", activeQrId.c_str());
-        return;
-    }
-
-    // If device is in error state, reset to ready first
-    if (currentState == STATE_ERROR) {
-        relay.setState(STATE_READY);
-    }
-
-    // Retrieve default payment rule (Rule 0 configured in NVS / Web Portal: Default 1 Rupee for 3 seconds)
     DeviceSettings& s = storage.getSettings();
+    if (s.ruleCount <= 1) {
+        Serial.println("[BUTTON] Short press ignored: only one amount is configured.");
+        return;
+    }
+
+    selectedRuleIndex = (selectedRuleIndex + 1) % s.ruleCount;
+    refreshHomeScreen();
+
+    Serial.printf("[BUTTON] Selected amount %d/%d: Rs. %.2f for %u sec\n",
+                  selectedRuleIndex + 1, s.ruleCount,
+                  s.rules[selectedRuleIndex].amount,
+                  s.rules[selectedRuleIndex].durationSec);
+}
+
+// Long press: start payment for the amount currently shown on the display
+void handleButtonLongPress() {
+    GatewayState currentState = relay.getState();
+    if (currentState != STATE_READY) {
+        Serial.printf("[BUTTON] Long press ignored in state %s\n", stateToString(currentState));
+        return;
+    }
+    startSelectedPayment();
+}
+
+void startSelectedPayment() {
+    normalizeSelectedRule();
+    DeviceSettings& s = storage.getSettings();
+
     float amount = 1.0f;
     uint32_t duration = 3;
-
     if (s.ruleCount > 0) {
-        amount = s.rules[0].amount;
-        duration = s.rules[0].durationSec;
+        amount = s.rules[selectedRuleIndex].amount;
+        duration = s.rules[selectedRuleIndex].durationSec;
     }
 
-    Serial.printf("[BUTTON] D25 went LOW! Initiating payment for configured rule: Rs. %.2f (%u sec)...\n", 
+    Serial.printf("[BUTTON] Long press detected. Starting payment: Rs. %.2f for %u sec...\n",
                   amount, duration);
 
     String err;

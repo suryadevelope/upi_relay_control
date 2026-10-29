@@ -36,6 +36,60 @@ private:
     int rotation = 1;
     int blPin = -1;
 
+    // =========================================================================
+    // Small text/layout helpers (keep every element centered and aligned)
+    // =========================================================================
+    String formatAmount(float amount) const {
+        long whole = (long)(amount + 0.5f);
+        if (fabsf(amount - (float)whole) < 0.01f) {
+            return "Rs." + String(whole);
+        }
+        return "Rs." + String(amount, 2);
+    }
+
+    void drawCentered(const String& text, int16_t x, int16_t w, int16_t y,
+                      uint8_t size, uint16_t color) {
+        if (!activeDisplay) return;
+        int16_t x1, y1;
+        uint16_t tw, th;
+        activeDisplay->setTextSize(size);
+        activeDisplay->getTextBounds(text.c_str(), 0, 0, &x1, &y1, &tw, &th);
+        int16_t drawX = x + (w - (int16_t)tw) / 2 - x1;
+        activeDisplay->setTextColor(color);
+        activeDisplay->setCursor(drawX, y);
+        activeDisplay->print(text);
+    }
+
+    // Shrinks the font when needed so the text never spills outside its box.
+    void drawCenteredFit(const String& text, int16_t x, int16_t w, int16_t y,
+                         uint8_t maxSize, uint16_t color) {
+        if (!activeDisplay) return;
+        uint8_t size = maxSize;
+        int16_t x1, y1;
+        uint16_t tw, th;
+        while (size > 1) {
+            activeDisplay->setTextSize(size);
+            activeDisplay->getTextBounds(text.c_str(), 0, 0, &x1, &y1, &tw, &th);
+            if ((int16_t)tw <= w) break;
+            size--;
+        }
+        drawCentered(text, x, w, y, size, color);
+    }
+
+    String truncateToWidth(const String& text, uint16_t maxWidth, uint8_t size) {
+        if (!activeDisplay) return text;
+        String out = text;
+        int16_t x1, y1;
+        uint16_t w, h;
+        while (out.length() > 0) {
+            activeDisplay->setTextSize(size);
+            activeDisplay->getTextBounds(out.c_str(), 0, 0, &x1, &y1, &w, &h);
+            if (w <= maxWidth) break;
+            out.remove(out.length() - 1);
+        }
+        return out;
+    }
+
 public:
     DisplayManager() {}
 
@@ -85,124 +139,146 @@ public:
     // =========================================================================
     // SCREEN 1: HOME PAGE
     // =========================================================================
-    void showHomeScreen(const String& apSSID, const String& staIP, bool staConnected, 
-                        int ruleCount, const PaymentRule* rules) {
+    void showHomeScreen(const String& apSSID, const String& staIP, bool staConnected,
+                        int ruleCount, const PaymentRule* rules, int selectedIndex = 0) {
         if (!activeDisplay) return;
+
+        if (ruleCount < 0) ruleCount = 0;
+        if (selectedIndex < 0) selectedIndex = 0;
+        if (ruleCount > 0 && selectedIndex >= ruleCount) selectedIndex = ruleCount - 1;
+
+        float amount = (ruleCount > 0 && rules != nullptr) ? rules[selectedIndex].amount : 1.0f;
+        uint32_t durationSec = (ruleCount > 0 && rules != nullptr) ? rules[selectedIndex].durationSec : 3;
+        String amountText = formatAmount(amount);
+        String durationText = String(durationSec) + " sec power";
+
+        String selectionText;
+        if (ruleCount > 1) {
+            selectionText = "AMOUNT " + String(selectedIndex + 1) + " OF " + String(ruleCount);
+        } else if (ruleCount == 1) {
+            selectionText = "SINGLE AMOUNT CONFIGURED";
+        } else {
+            selectionText = "DEFAULT AMOUNT";
+        }
+
         activeDisplay->fillScreen(COLOR_BG);
 
         if (screenWidth >= 300) {
-            // Landscape (320x240) Home Page
-            // Top Header Bar
-            activeDisplay->fillRect(0, 0, screenWidth, 38, COLOR_PANEL);
+            // ================= Landscape (320x240) =================
+            // Header bar
+            activeDisplay->fillRect(0, 0, screenWidth, 36, COLOR_PANEL);
             activeDisplay->setTextSize(2);
             activeDisplay->setTextColor(COLOR_WHITE);
-            activeDisplay->setCursor(15, 10);
+            activeDisplay->setCursor(14, 10);
             activeDisplay->print("PAYMENT GATEWAY");
 
-            // Wi-Fi Status Dot & Label
-            if (staConnected) {
-                activeDisplay->fillCircle(screenWidth - 20, 18, 6, COLOR_GREEN);
-            } else {
-                activeDisplay->fillCircle(screenWidth - 20, 18, 6, COLOR_ORANGE);
-            }
-
-            // Available Price Rule Cards
-            int maxShow = ruleCount > 3 ? 3 : (ruleCount > 0 ? ruleCount : 1);
-            int cardW = (screenWidth - 28 - ((maxShow - 1) * 8)) / maxShow;
-            int startY = 48;
-
-            for (int i = 0; i < maxShow && i < ruleCount; i++) {
-                int cardX = 14 + i * (cardW + 8);
-                activeDisplay->fillRoundRect(cardX, startY, cardW, 85, 6, COLOR_PANEL);
-                activeDisplay->drawRoundRect(cardX, startY, cardW, 85, 6, COLOR_CYAN);
-
-                // Price Amount
-                activeDisplay->setTextSize(3);
-                activeDisplay->setTextColor(COLOR_GREEN);
-                activeDisplay->setCursor(cardX + 12, startY + 16);
-                activeDisplay->printf("Rs.%d", (int)rules[i].amount);
-
-                // Load Duration
-                activeDisplay->setTextSize(1);
-                activeDisplay->setTextColor(COLOR_YELLOW);
-                activeDisplay->setCursor(cardX + 14, startY + 54);
-                activeDisplay->printf("Power: %u Sec", rules[i].durationSec);
-            }
-
-            // Prominent "Press D25 to Start" Action Box
-            activeDisplay->fillRoundRect(14, 142, screenWidth - 28, 48, 8, 0x0320); // Dark emerald
-            activeDisplay->drawRoundRect(14, 142, screenWidth - 28, 48, 8, COLOR_GREEN);
-            activeDisplay->setTextSize(2);
-            activeDisplay->setTextColor(COLOR_WHITE);
-            activeDisplay->setCursor(28, 157);
-            activeDisplay->print("PRESS D25 TO PAY");
-
-            // Subtitle inside action button
             activeDisplay->setTextSize(1);
-            activeDisplay->setTextColor(COLOR_GREEN);
-            activeDisplay->setCursor(screenWidth - 105, 162);
-            activeDisplay->print("START >");
+            activeDisplay->setTextColor(staConnected ? COLOR_GREEN : COLOR_ORANGE);
+            activeDisplay->setCursor(screenWidth - 74, 15);
+            activeDisplay->print(staConnected ? "ONLINE" : "OFFLINE");
+            activeDisplay->fillCircle(screenWidth - 16, 18, 5,
+                                      staConnected ? COLOR_GREEN : COLOR_ORANGE);
 
-            // Bottom Footer with AP & Network Info
+            // Selected amount card
+            int cardX = 20, cardY = 46, cardW = screenWidth - 40, cardH = 96;
+            activeDisplay->fillRoundRect(cardX, cardY, cardW, cardH, 8, COLOR_PANEL);
+            activeDisplay->drawRoundRect(cardX, cardY, cardW, cardH, 8, COLOR_CYAN);
+
+            drawCentered("SELECTED AMOUNT", cardX, cardW, cardY + 9, 1, COLOR_CYAN);
+            drawCenteredFit(amountText, cardX + 12, cardW - 24, cardY + 22, 5, COLOR_GREEN);
+            drawCentered(durationText, cardX, cardW, cardY + 64, 1, COLOR_YELLOW);
+            drawCentered(selectionText, cardX, cardW, cardY + 79, 1, COLOR_GRAY);
+
+            // Interaction cards (short press / long press)
+            int actionY = 152, actionH = 54, actionGap = 10;
+            int actionW = (screenWidth - 40 - actionGap) / 2;
+            int leftX = 20, rightX = leftX + actionW + actionGap;
+
+            activeDisplay->fillRoundRect(leftX, actionY, actionW, actionH, 7, COLOR_PANEL);
+            activeDisplay->drawRoundRect(leftX, actionY, actionW, actionH, 7, COLOR_DARK_GRAY);
+            drawCentered(ruleCount > 1 ? "SHORT PRESS" : "AMOUNT LOCKED",
+                         leftX, actionW, actionY + 8, 1, COLOR_GRAY);
+            drawCenteredFit(ruleCount > 1 ? "NEXT AMOUNT" : "READY",
+                            leftX, actionW, actionY + 25, 2, COLOR_WHITE);
+
+            activeDisplay->fillRoundRect(rightX, actionY, actionW, actionH, 7, 0x0320);
+            activeDisplay->drawRoundRect(rightX, actionY, actionW, actionH, 7, COLOR_GREEN);
+            drawCentered("HOLD 1.5s", rightX, actionW, actionY + 8, 1, COLOR_GREEN);
+            drawCenteredFit("START PAY", rightX, actionW, actionY + 25, 2, COLOR_WHITE);
+
+            // Footer: Wi-Fi status on the left, admin AP on the right
             activeDisplay->fillRect(0, screenHeight - 22, screenWidth, 22, COLOR_PANEL);
             activeDisplay->setTextSize(1);
-            activeDisplay->setTextColor(COLOR_GRAY);
-            activeDisplay->setCursor(14, screenHeight - 15);
-            if (staConnected) {
-                activeDisplay->printf("WiFi: %s | Web: %s", staIP.c_str(), apSSID.c_str());
+            activeDisplay->setTextColor(staConnected ? COLOR_CYAN : COLOR_ORANGE);
+            activeDisplay->setCursor(12, screenHeight - 15);
+            if (staConnected && staIP.length() > 0) {
+                activeDisplay->printf("WiFi: %s", staIP.c_str());
             } else {
-                activeDisplay->printf("Admin AP: %s (192.168.4.1)", apSSID.c_str());
+                activeDisplay->print("WiFi: OFFLINE");
             }
+
+            String apLabel = truncateToWidth("AP: " + apSSID, 118, 1);
+            int16_t x1, y1;
+            uint16_t tw, th;
+            activeDisplay->setTextSize(1);
+            activeDisplay->getTextBounds(apLabel.c_str(), 0, 0, &x1, &y1, &tw, &th);
+            activeDisplay->setTextColor(COLOR_GRAY);
+            activeDisplay->setCursor(screenWidth - 12 - (int16_t)tw - x1, screenHeight - 15);
+            activeDisplay->print(apLabel);
         } else {
-            // Portrait (240x320) Home Page
+            // ================= Portrait (240x320) =================
             activeDisplay->fillRect(0, 0, screenWidth, 38, COLOR_PANEL);
             activeDisplay->setTextSize(2);
             activeDisplay->setTextColor(COLOR_WHITE);
-            activeDisplay->setCursor(12, 10);
-            activeDisplay->print("PAY GATEWAY");
+            activeDisplay->setCursor(12, 11);
+            activeDisplay->print("PAYMENT GATEWAY");
 
-            if (staConnected) {
-                activeDisplay->fillCircle(screenWidth - 15, 18, 5, COLOR_GREEN);
-            } else {
-                activeDisplay->fillCircle(screenWidth - 15, 18, 5, COLOR_ORANGE);
-            }
+            activeDisplay->fillCircle(screenWidth - 16, 19, 5,
+                                      staConnected ? COLOR_GREEN : COLOR_ORANGE);
 
-            // Main rule card
-            if (ruleCount > 0) {
-                activeDisplay->fillRoundRect(15, 55, screenWidth - 30, 110, 8, COLOR_PANEL);
-                activeDisplay->drawRoundRect(15, 55, screenWidth - 30, 110, 8, COLOR_CYAN);
+            // Selected amount card
+            int cardX = 14, cardY = 48, cardW = screenWidth - 28, cardH = 122;
+            activeDisplay->fillRoundRect(cardX, cardY, cardW, cardH, 8, COLOR_PANEL);
+            activeDisplay->drawRoundRect(cardX, cardY, cardW, cardH, 8, COLOR_CYAN);
 
-                activeDisplay->setTextSize(4);
-                activeDisplay->setTextColor(COLOR_GREEN);
-                activeDisplay->setCursor(35, 75);
-                activeDisplay->printf("Rs.%d", (int)rules[0].amount);
+            drawCentered("SELECTED AMOUNT", cardX, cardW, cardY + 10, 1, COLOR_CYAN);
+            drawCenteredFit(amountText, cardX + 10, cardW - 20, cardY + 26, 5, COLOR_GREEN);
+            drawCentered(durationText, cardX, cardW, cardY + 68, 1, COLOR_YELLOW);
+            drawCentered(selectionText, cardX, cardW, cardY + 88, 1, COLOR_GRAY);
 
-                activeDisplay->setTextSize(2);
-                activeDisplay->setTextColor(COLOR_YELLOW);
-                activeDisplay->setCursor(35, 125);
-                activeDisplay->printf("%u Seconds", rules[0].durationSec);
-            }
+            // Short press hint
+            int actionX = 14, actionW = screenWidth - 28;
+            int shortY = 182, shortH = 38;
+            activeDisplay->fillRoundRect(actionX, shortY, actionW, shortH, 7, COLOR_PANEL);
+            activeDisplay->drawRoundRect(actionX, shortY, actionW, shortH, 7, COLOR_DARK_GRAY);
+            drawCenteredFit(ruleCount > 1 ? "SHORT PRESS: CHANGE AMOUNT" : "SINGLE AMOUNT CONFIGURED",
+                            actionX, actionW, shortY + 15, 1, COLOR_WHITE);
 
-            // Big Start Button Banner
-            activeDisplay->fillRoundRect(15, 185, screenWidth - 30, 60, 8, 0x0320);
-            activeDisplay->drawRoundRect(15, 185, screenWidth - 30, 60, 8, COLOR_GREEN);
-            activeDisplay->setTextSize(2);
-            activeDisplay->setTextColor(COLOR_WHITE);
-            activeDisplay->setCursor(25, 205);
-            activeDisplay->print("PRESS D25 TO PAY");
+            // Long press to pay
+            int holdY = 230, holdH = 50;
+            activeDisplay->fillRoundRect(actionX, holdY, actionW, holdH, 7, 0x0320);
+            activeDisplay->drawRoundRect(actionX, holdY, actionW, holdH, 7, COLOR_GREEN);
+            drawCentered("HOLD 1.5s", actionX, actionW, holdY + 7, 1, COLOR_GREEN);
+            drawCenteredFit("START PAYMENT", actionX, actionW, holdY + 24, 2, COLOR_WHITE);
 
+            // Footer
             activeDisplay->fillRect(0, screenHeight - 25, screenWidth, 25, COLOR_PANEL);
             activeDisplay->setTextSize(1);
-            activeDisplay->setTextColor(COLOR_GRAY);
+            activeDisplay->setTextColor(staConnected ? COLOR_CYAN : COLOR_ORANGE);
             activeDisplay->setCursor(10, screenHeight - 16);
-            activeDisplay->print("Ready for payment...");
+            if (staConnected && staIP.length() > 0) {
+                activeDisplay->printf("WiFi: %s", staIP.c_str());
+            } else {
+                String apFooter = truncateToWidth("AP: " + apSSID, screenWidth - 20, 1);
+                activeDisplay->print(apFooter);
+            }
         }
     }
 
     // Alias for compatibility
-    void showReadyScreen(const String& apSSID, const String& staIP, bool staConnected, 
-                         int ruleCount, const PaymentRule* rules) {
-        showHomeScreen(apSSID, staIP, staConnected, ruleCount, rules);
+    void showReadyScreen(const String& apSSID, const String& staIP, bool staConnected,
+                         int ruleCount, const PaymentRule* rules, int selectedIndex = 0) {
+        showHomeScreen(apSSID, staIP, staConnected, ruleCount, rules, selectedIndex);
     }
 
     // =========================================================================
@@ -364,10 +440,7 @@ public:
 
         // Header Banner
         activeDisplay->fillRect(0, 0, screenWidth, 42, COLOR_EMERALD);
-        activeDisplay->setTextSize(2);
-        activeDisplay->setTextColor(COLOR_WHITE);
-        activeDisplay->setCursor(20, 12);
-        activeDisplay->print("PAYMENT SUCCESSFUL!");
+        drawCentered("PAYMENT SUCCESSFUL!", 0, screenWidth, 13, 2, COLOR_WHITE);
 
         // Center Confirmation Card
         activeDisplay->fillRoundRect(12, 54, screenWidth - 24, 140, 8, COLOR_PANEL);
@@ -383,15 +456,10 @@ public:
             activeDisplay->print("OK");
 
             // Amount Paid
-            activeDisplay->setTextSize(2);
-            activeDisplay->setTextColor(COLOR_GREEN);
-            activeDisplay->setCursor(88, 68);
-            activeDisplay->printf("PAID: Rs. %.2f", amount);
-
-            activeDisplay->setTextSize(1);
-            activeDisplay->setTextColor(COLOR_WHITE);
-            activeDisplay->setCursor(88, 94);
-            activeDisplay->print("Transaction Captured & Verified");
+            drawCenteredFit("PAID: " + formatAmount(amount),
+                            88, screenWidth - 88 - 22, 68, 2, COLOR_GREEN);
+            drawCentered("Transaction Captured & Verified",
+                         88, screenWidth - 88 - 22, 94, 1, COLOR_WHITE);
 
             // LIVE RELAY STATUS BOX
             int badgeX = 88;
@@ -400,16 +468,12 @@ public:
             int badgeH = 34;
             activeDisplay->fillRoundRect(badgeX, badgeY, badgeW, badgeH, 6, 0x0320); // Dark emerald
             activeDisplay->drawRoundRect(badgeX, badgeY, badgeW, badgeH, 6, COLOR_GREEN);
-            activeDisplay->setTextSize(2);
-            activeDisplay->setTextColor(COLOR_WHITE);
-            activeDisplay->setCursor(badgeX + 12, badgeY + 9);
-            activeDisplay->printf("RELAY: OPEN [%us]", remainingRelaySec);
+            drawCenteredFit("RELAY: OPEN [" + String(remainingRelaySec) + "s]",
+                            badgeX, badgeW, badgeY + 9, 2, COLOR_WHITE);
 
             // Subtext note
-            activeDisplay->setTextSize(1);
-            activeDisplay->setTextColor(COLOR_YELLOW);
-            activeDisplay->setCursor(88, 158);
-            activeDisplay->printf("Power Output Active for %u Seconds", durationSec);
+            drawCentered("Power Output Active for " + String(durationSec) + " Seconds",
+                         88, screenWidth - 88 - 22, 158, 1, COLOR_YELLOW);
         } else {
             // Portrait Layout
             activeDisplay->fillCircle(screenWidth / 2, 90, 22, COLOR_GREEN);
@@ -418,21 +482,21 @@ public:
             activeDisplay->setCursor((screenWidth / 2) - 11, 83);
             activeDisplay->print("OK");
 
-            activeDisplay->setTextSize(2);
-            activeDisplay->setTextColor(COLOR_GREEN);
-            activeDisplay->setCursor(30, 122);
-            activeDisplay->printf("PAID: Rs. %.2f", amount);
+            drawCenteredFit("PAID: " + formatAmount(amount),
+                            12, screenWidth - 24, 122, 2, COLOR_GREEN);
 
-            int badgeX = 24;
+            int badgeX = 12;
             int badgeY = 146;
-            int badgeW = screenWidth - 48;
+            int badgeW = screenWidth - 24;
             int badgeH = 34;
             activeDisplay->fillRoundRect(badgeX, badgeY, badgeW, badgeH, 6, 0x0320);
             activeDisplay->drawRoundRect(badgeX, badgeY, badgeW, badgeH, 6, COLOR_GREEN);
-            activeDisplay->setTextSize(2);
-            activeDisplay->setTextColor(COLOR_WHITE);
-            activeDisplay->setCursor(badgeX + 10, badgeY + 9);
-            activeDisplay->printf("RELAY: OPEN [%us]", remainingRelaySec);
+            drawCenteredFit("RELAY: OPEN [" + String(remainingRelaySec) + "s]",
+                            badgeX, badgeW, badgeY + 9, 2, COLOR_WHITE);
+
+            // Subtext note (keeps the portrait layout balanced)
+            drawCentered("Power Output Active for " + String(durationSec) + " Seconds",
+                         12, screenWidth - 24, 208, 1, COLOR_YELLOW);
         }
 
         // Bottom Footer
@@ -455,32 +519,24 @@ public:
 
             activeDisplay->fillRoundRect(badgeX, badgeY, badgeW, badgeH, 6, 0x0320);
             activeDisplay->drawRoundRect(badgeX, badgeY, badgeW, badgeH, 6, COLOR_GREEN);
-            activeDisplay->setTextSize(2);
-            activeDisplay->setTextColor(COLOR_WHITE);
-            activeDisplay->setCursor(badgeX + 12, badgeY + 9);
 
-            if (remainingRelaySec > 0) {
-                activeDisplay->printf("RELAY: OPEN [%us]", remainingRelaySec);
-            } else {
-                activeDisplay->print("RELAY: CLOSED [OFF]");
-            }
+            String relayText = (remainingRelaySec > 0)
+                                   ? "RELAY: OPEN [" + String(remainingRelaySec) + "s]"
+                                   : "RELAY: CLOSED [OFF]";
+            drawCenteredFit(relayText, badgeX, badgeW, badgeY + 9, 2, COLOR_WHITE);
         } else {
-            int badgeX = 24;
+            int badgeX = 12;
             int badgeY = 146;
-            int badgeW = screenWidth - 48;
+            int badgeW = screenWidth - 24;
             int badgeH = 34;
 
             activeDisplay->fillRoundRect(badgeX, badgeY, badgeW, badgeH, 6, 0x0320);
             activeDisplay->drawRoundRect(badgeX, badgeY, badgeW, badgeH, 6, COLOR_GREEN);
-            activeDisplay->setTextSize(2);
-            activeDisplay->setTextColor(COLOR_WHITE);
-            activeDisplay->setCursor(badgeX + 10, badgeY + 9);
 
-            if (remainingRelaySec > 0) {
-                activeDisplay->printf("RELAY: OPEN [%us]", remainingRelaySec);
-            } else {
-                activeDisplay->print("RELAY: CLOSED [OFF]");
-            }
+            String relayText = (remainingRelaySec > 0)
+                                   ? "RELAY: OPEN [" + String(remainingRelaySec) + "s]"
+                                   : "RELAY: CLOSED [OFF]";
+            drawCenteredFit(relayText, badgeX, badgeW, badgeY + 9, 2, COLOR_WHITE);
         }
     }
 
@@ -498,49 +554,38 @@ public:
 
         // Header Banner
         activeDisplay->fillRect(0, 0, screenWidth, 44, COLOR_CRIMSON);
-        activeDisplay->setTextSize(2);
-        activeDisplay->setTextColor(COLOR_WHITE);
-        activeDisplay->setCursor(35, 14);
-        activeDisplay->print("PAYMENT FAILED!");
+        drawCentered("PAYMENT FAILED!", 0, screenWidth, 14, 2, COLOR_WHITE);
 
-        // Center Error Card
-        activeDisplay->fillRoundRect(15, 60, screenWidth - 30, 135, 8, COLOR_PANEL);
-        activeDisplay->drawRoundRect(15, 60, screenWidth - 30, 135, 8, COLOR_RED);
+        // Center Error Card (fits both landscape and portrait)
+        int cardX = 15;
+        int cardY = (screenWidth >= 300) ? 54 : 56;
+        int cardW = screenWidth - 30;
+        int cardH = screenHeight - cardY - 32;
+        activeDisplay->fillRoundRect(cardX, cardY, cardW, cardH, 8, COLOR_PANEL);
+        activeDisplay->drawRoundRect(cardX, cardY, cardW, cardH, 8, COLOR_RED);
+
+        // Vertically center the content block inside the card
+        const int contentH = 156;
+        int contentY = cardY + (cardH - contentH) / 2;
 
         // Red X badge
-        activeDisplay->fillCircle(55, 127, 24, COLOR_RED);
-        activeDisplay->setTextSize(3);
-        activeDisplay->setTextColor(COLOR_WHITE);
-        activeDisplay->setCursor(46, 117);
-        activeDisplay->print("X");
+        int badgeCX = screenWidth / 2;
+        int badgeCY = contentY + 30;
+        activeDisplay->fillCircle(badgeCX, badgeCY, 24, COLOR_RED);
+        drawCentered("X", badgeCX - 24, 48, badgeCY - 12, 3, COLOR_WHITE);
 
         // Error message
-        activeDisplay->setTextSize(2);
-        activeDisplay->setTextColor(COLOR_RED);
-        activeDisplay->setCursor(95, 82);
         String displayReason = reason.length() > 0 ? reason : "Timeout / Expired";
-        if (displayReason.length() > 18) displayReason = displayReason.substring(0, 18);
-        activeDisplay->print(displayReason);
+        if (displayReason.length() > 24) displayReason = displayReason.substring(0, 24);
+        drawCenteredFit(displayReason, cardX + 10, cardW - 20, contentY + 66, 2, COLOR_RED);
 
-        activeDisplay->setTextSize(1);
-        activeDisplay->setTextColor(COLOR_WHITE);
-        activeDisplay->setCursor(95, 114);
-        activeDisplay->print("Transaction was not completed.");
-
-        activeDisplay->setTextColor(COLOR_GRAY);
-        activeDisplay->setCursor(95, 136);
-        activeDisplay->print("No amount was charged.");
-
-        activeDisplay->setTextColor(COLOR_YELLOW);
-        activeDisplay->setCursor(95, 158);
-        activeDisplay->print("Relay safely remained OFF.");
+        drawCentered("Transaction was not completed.", cardX + 6, cardW - 12, contentY + 98, 1, COLOR_WHITE);
+        drawCentered("No amount was charged.", cardX + 6, cardW - 12, contentY + 114, 1, COLOR_GRAY);
+        drawCentered("Relay safely remained OFF.", cardX + 6, cardW - 12, contentY + 134, 1, COLOR_YELLOW);
 
         // Bottom Footer
         activeDisplay->fillRect(0, screenHeight - 22, screenWidth, 22, COLOR_PANEL);
-        activeDisplay->setTextSize(1);
-        activeDisplay->setTextColor(COLOR_YELLOW);
-        activeDisplay->setCursor(20, screenHeight - 15);
-        activeDisplay->print("Returning to Home screen...");
+        drawCentered("Returning to Home screen...", 0, screenWidth, screenHeight - 15, 1, COLOR_YELLOW);
     }
 
     // Compatibility alias

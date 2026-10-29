@@ -25,6 +25,7 @@ private:
 
     String currentSessionToken = "";
     unsigned long sessionExpiry = 0;
+    bool settingsChanged = false;
 
     String activeQrPayload = "";
     String activeQrId = "";
@@ -82,6 +83,13 @@ public:
 
     void update() {
         server.handleClient();
+    }
+
+    // Lets main apply backend URL/key changes immediately (no reboot needed)
+    bool consumeSettingsChanged() {
+        if (!settingsChanged) return false;
+        settingsChanged = false;
+        return true;
     }
 
     void setPaymentCallbacks(PaymentTriggerCallback onTrigger, PaymentCancelCallback onCancel) {
@@ -336,6 +344,7 @@ private:
         }
 
         storage->saveSettings();
+        settingsChanged = true;
         server.send(200, "application/json", "{\"success\":true}");
     }
 
@@ -705,7 +714,7 @@ input:checked + .slider:before { transform: translateX(20px); }
       <h2>Cloud Backend & Security Config</h2>
       <div class="form-group">
         <label>Cloud Backend Base URL</label>
-        <input type="text" id="backendUrlInput" placeholder="http://10.13.137.189:3000">
+        <input type="text" id="backendUrlInput" placeholder="http://10.51.153.189:3000">
         <small style="color: var(--muted); font-size: 12px;">Enter your Cloudflare Worker URL or Node.js server address.</small>
       </div>
       <div class="form-group">
