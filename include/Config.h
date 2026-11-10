@@ -7,17 +7,20 @@
 // System Hardware Pin Assignments (Default)
 // ==========================================
 
-// Single Physical Control Button (Active LOW)
-// Short press cycles the selected amount; hold for 1.5s to start the payment.
-#define DEFAULT_PAYMENT_TRIGGER_PIN 25
+// 5-button menu navigation (all Active LOW, internal pull-ups enabled in firmware)
+#define PIN_BTN_ENTER              32   // Select / confirm / pay
+#define PIN_BTN_DOWN               13   // Next amount card (was 27: false GND)
+#define PIN_BTN_UP                 25   // Previous amount card
+#define PIN_BTN_RIGHT              16   // Info screen / next page (14 read LOW at idle: false GND)
+#define PIN_BTN_LEFT               33   // Back / cancel
 
 // Relay Pin
 #define DEFAULT_RELAY_PIN          26
 #define DEFAULT_RELAY_ACTIVE_HIGH  true
 
-// 2.8-inch SPI Touch Screen Module TFT Display Pins (240x320)
-// Standard ESP32 VSPI default pins:
-// MOSI = GPIO 23, SCLK = GPIO 18, MISO = GPIO 19
+// KMRTM24024-SPI 2.8-inch TFT (ST7789, 240x320 native, 320x240 landscape)
+// Pins must match the TFT_* build_flags in platformio.ini (TFT_eSPI is configured there).
+// ESP32 VSPI default pins: MOSI = GPIO 23, SCLK = GPIO 18, MISO = GPIO 19
 #define DEFAULT_TFT_MOSI           23
 #define DEFAULT_TFT_SCLK           18
 #define DEFAULT_TFT_MISO           19
@@ -26,12 +29,12 @@
 #define DEFAULT_TFT_RST            22
 #define DEFAULT_TFT_BL             4   // Backlight LED (optional)
 
-// Display Driver Types
+// Display Driver Types (driver is fixed at build time by ST7789_DRIVER in platformio.ini)
 enum DisplayDriverType {
     DISPLAY_ST7789 = 0,
     DISPLAY_ILI9341 = 1
 };
-#define DEFAULT_DISPLAY_TYPE       DISPLAY_ILI9341
+#define DEFAULT_DISPLAY_TYPE       DISPLAY_ST7789
 
 // ==========================================
 // Default Network & Security Credentials
@@ -43,9 +46,20 @@ enum DisplayDriverType {
 #define DEFAULT_ADMIN_USER         "admin"
 #define DEFAULT_ADMIN_PASS         "admin123"
 
+// Device identity and local network services
+#define DEFAULT_DEVICE_NAME        "Smart Gateway"
+#define FIRMWARE_VERSION           "2.0.0"
+#define SETUP_HTTP_PORT            80     // Hotspot-only Wi-Fi setup page (never served on the LAN)
+#define ADMIN_API_PORT             8080   // JSON admin API for the desktop app (LAN + hotspot)
+#define DISCOVERY_UDP_PORT         4210   // UDP broadcast discovery for the desktop app
+#define ADMIN_SESSION_IDLE_MS      (15UL * 60UL * 1000UL)
+#define ADMIN_LOGIN_MAX_FAILS      5
+#define ADMIN_LOGIN_LOCK_MS        (30UL * 1000UL)
+
 // Default Backend URL and Device Key
-// Set this to the LAN IP of the PC running backend/src/server.js.
-#define DEFAULT_BACKEND_URL        "http://10.51.153.189:3000"
+// Cloud backend deployed on Railway (backend/ folder). HTTPS is handled by PaymentClient.
+// For local testing, point this to the PC running backend/src/server.js (e.g. http://<LAN-IP>:3000).
+#define DEFAULT_BACKEND_URL        "https://upirelay.up.railway.app"
 #define DEFAULT_DEVICE_KEY         "sg_device_secret_key_123"
 
 // Default Debug Mode (QR code is rendered on TFT; serial QR printing disabled)
@@ -105,6 +119,8 @@ struct TransactionRecord {
 };
 
 struct DeviceSettings {
+    char deviceName[33];
+    bool serviceEnabled;   // false = admin stopped the service: no payments, relay forced OFF
     char apSSID[33];
     char apPass[65];
     char staSSID[33];

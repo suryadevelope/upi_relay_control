@@ -2,43 +2,61 @@
 #define DISPLAY_MANAGER_H
 
 #include <Arduino.h>
-#include <SPI.h>
-#include <Adafruit_GFX.h>
-#include <Adafruit_ST7789.h>
-#include <Adafruit_ILI9341.h>
+#include <TFT_eSPI.h>   // Driver, pins, rotation setup come from the TFT_* build flags in platformio.ini
 #include "Config.h"
 #include "QRCodeRenderer.h"
 
-// Color 565 Definitions
-#define COLOR_BG          0x0841  // Deep slate background
-#define COLOR_PANEL       0x18E3  // Dark slate card background
+#ifndef TFT_BACKLIGHT_ON
+#define TFT_BACKLIGHT_ON 1
+#endif
+
+// ----------------------------------------------------------------------------
+// Outdoor (direct sunlight) palette: pure black background, white / yellow /
+// bright green text, bright colour bands. No low-contrast slate panels.
+// ----------------------------------------------------------------------------
+#define COLOR_BG          0x0000  // Black background
+#define COLOR_PANEL       0x0000  // Cards are outlined in colour, not filled
 #define COLOR_WHITE       0xFFFF
 #define COLOR_BLACK       0x0000
 #define COLOR_GREEN       0x07E0  // Bright green
-#define COLOR_EMERALD     0x2E6B  // Emerald green
+#define COLOR_EMERALD     0x07E0  // Success banner
 #define COLOR_RED         0xF800  // Bright red
-#define COLOR_CRIMSON     0xD8A7  // Deep red
-#define COLOR_CYAN        0x07FF  // Cyan
-#define COLOR_YELLOW      0xFFE0  // Yellow
-#define COLOR_ORANGE      0xFD20  // Orange
-#define COLOR_GRAY        0x7BEF  // Light gray
-#define COLOR_DARK_GRAY   0x39E7  // Dark gray
+#define COLOR_CRIMSON     0xF800  // Failure banner
+#define COLOR_CYAN        0x07FF
+#define COLOR_YELLOW      0xFFE0
+#define COLOR_ORANGE      0xFD20
+#define COLOR_GRAY        0xC618  // Light grey, still readable in sun
+#define COLOR_DARK_GRAY   0x7BEF  // Mid grey, used only for dividers
+
+// Text sizes (built-in 6x8 font scaled by size): size 2 = 12x16 px,
+// size 3 = 18x24 px, size 4 = 24x32 px, size 5 = 30x40 px.
+// No text is drawn smaller than size 2.
 
 class DisplayManager {
 private:
-    Adafruit_ST7789* st7789Display = nullptr;
-    Adafruit_ILI9341* ili9341Display = nullptr;
-    Adafruit_GFX* activeDisplay = nullptr;
+    static constexpr int HEADER_H = 40;
+    static constexpr int FOOTER_H = 30;
+    static constexpr uint8_t BL_CHANNEL = 0;     // LEDC channel for backlight PWM
+    static constexpr uint8_t BL_FULL = 255;      // Full brightness (default)
+
+    TFT_eSPI tft;                        // ST7789 240x320 panel, used as 320x240 landscape
+    TFT_eSPI* activeDisplay = nullptr;   // set by begin() once tft is initialised
 
     int screenWidth = 320;
     int screenHeight = 240;
-    int displayType = DISPLAY_ILI9341;
     int rotation = 1;
     int blPin = -1;
+    uint8_t brightness = BL_FULL;
 
-    // =========================================================================
-    // Small text/layout helpers (keep every element centered and aligned)
-    // =========================================================================
+    // ------------------------------------------------------------------------
+    // Text and layout helpers
+    // ------------------------------------------------------------------------
+    // Built-in font: 6 px per character cell, 8 px tall, scaled by size.
+    static int textW(const String& s, uint8_t size) {
+        return (int)s.length() * 6 * size;
+    }
+    static int textH(uint8_t size) { return 8 * size; }
+
     String formatAmount(float amount) const {
         long whole = (long)(amount + 0.5f);
         if (fabsf(amount - (float)whole) < 0.01f) {
@@ -47,550 +65,387 @@ private:
         return "Rs." + String(amount, 2);
     }
 
-    void drawCentered(const String& text, int16_t x, int16_t w, int16_t y,
-                      uint8_t size, uint16_t color) {
-        if (!activeDisplay) return;
-        int16_t x1, y1;
-        uint16_t tw, th;
+    void text(const String& s, int x, int y, uint8_t size, uint16_t fg) {
         activeDisplay->setTextSize(size);
-        activeDisplay->getTextBounds(text.c_str(), 0, 0, &x1, &y1, &tw, &th);
-        int16_t drawX = x + (w - (int16_t)tw) / 2 - x1;
-        activeDisplay->setTextColor(color);
-        activeDisplay->setCursor(drawX, y);
-        activeDisplay->print(text);
+        activeDisplay->setTextColor(fg);
+        activeDisplay->setCursor(x, y);
+        activeDisplay->print(s);
     }
 
-    // Shrinks the font when needed so the text never spills outside its box.
-    void drawCenteredFit(const String& text, int16_t x, int16_t w, int16_t y,
-                         uint8_t maxSize, uint16_t color) {
-        if (!activeDisplay) return;
+    void textCentered(const String& s, int x, int w, int y, uint8_t size, uint16_t fg) {
+        text(s, x + (w - textW(s, size)) / 2, y, size, fg);
+    }
+
+    // Largest size (<= maxSize, never below 2) whose width fits in w
+    static uint8_t fitSize(const String& s, int w, uint8_t maxSize) {
         uint8_t size = maxSize;
-        int16_t x1, y1;
-        uint16_t tw, th;
-        while (size > 1) {
-            activeDisplay->setTextSize(size);
-            activeDisplay->getTextBounds(text.c_str(), 0, 0, &x1, &y1, &tw, &th);
-            if ((int16_t)tw <= w) break;
-            size--;
-        }
-        drawCentered(text, x, w, y, size, color);
+        while (size > 2 && textW(s, size) > w) size--;
+        return size;
     }
 
-    String truncateToWidth(const String& text, uint16_t maxWidth, uint8_t size) {
-        if (!activeDisplay) return text;
-        String out = text;
-        int16_t x1, y1;
-        uint16_t w, h;
-        while (out.length() > 0) {
-            activeDisplay->setTextSize(size);
-            activeDisplay->getTextBounds(out.c_str(), 0, 0, &x1, &y1, &w, &h);
-            if (w <= maxWidth) break;
+    void textFit(const String& s, int x, int w, int y, uint8_t maxSize, uint16_t fg) {
+        textCentered(s, x, w, y, fitSize(s, w, maxSize), fg);
+    }
+
+    // Drops characters from the end until the text fits (size 2 minimum)
+    static String truncateToWidth(const String& s, int maxW, uint8_t size) {
+        String out = s;
+        while (out.length() > 0 && textW(out, size) > maxW) {
             out.remove(out.length() - 1);
         }
         return out;
     }
 
+    // Two-pixel outline, so the card edge stays visible in bright light
+    void drawCard(int x, int y, int w, int h, uint16_t colour) {
+        activeDisplay->drawRoundRect(x, y, w, h, 6, colour);
+        activeDisplay->drawRoundRect(x + 1, y + 1, w - 2, h - 2, 5, colour);
+    }
+
+    void clearBody() {
+        activeDisplay->fillRect(0, HEADER_H, screenWidth,
+                                screenHeight - HEADER_H - FOOTER_H, COLOR_BG);
+    }
+
+    // Solid colour band across the top with a centred title
+    void drawHeader(const String& title, uint16_t bg, uint16_t fg) {
+        activeDisplay->fillRect(0, 0, screenWidth, HEADER_H, bg);
+        textFit(title, 6, screenWidth - 12, (HEADER_H - textH(3)) / 2, 3, fg);
+    }
+
+    // Footer: three key hints. left/right are pinned to the edges, centre sits
+    // in the gap between them. Pass an empty string to omit an item.
+    void drawFooter(const String& left, const String& centre, const String& right,
+                    uint16_t centreColour) {
+        const int y = screenHeight - FOOTER_H;
+        activeDisplay->drawFastHLine(0, y, screenWidth, COLOR_DARK_GRAY);
+        activeDisplay->fillRect(0, y + 1, screenWidth, FOOTER_H - 1, COLOR_BG);
+        const int ty = y + (FOOTER_H - textH(2)) / 2 + 1;
+
+        int leftEnd = 6;
+        if (left.length()) {
+            text(left, 6, ty, 2, COLOR_YELLOW);
+            leftEnd = 6 + textW(left, 2);
+        }
+        int rightStart = screenWidth - 6;
+        if (right.length()) {
+            rightStart = screenWidth - 6 - textW(right, 2);
+            text(right, rightStart, ty, 2, COLOR_YELLOW);
+        }
+        if (centre.length()) {
+            int cx = leftEnd + (rightStart - leftEnd - textW(centre, 2)) / 2;
+            text(centre, cx, ty, 2, centreColour);
+        }
+    }
+
+    // Backlight: PWM on the backlight pin. Level 0..255.
+    void writeBacklight(uint8_t level) {
+        if (blPin < 0) return;
+        ledcWrite(BL_CHANNEL, TFT_BACKLIGHT_ON ? level : (255 - level));
+    }
+
 public:
     DisplayManager() {}
 
-    ~DisplayManager() {
-        if (st7789Display) delete st7789Display;
-        if (ili9341Display) delete ili9341Display;
-    }
-
+    // Pins, driver and rotation are fixed by the TFT_* build flags in platformio.ini,
+    // so the tftCS/tftDC/tftRST settings are informational only. TFT_eSPI owns the SPI bus.
     void begin(const DeviceSettings& settings) {
-        displayType = settings.displayType;
         rotation = settings.tftRotation;
         blPin = settings.tftBL;
 
         if (blPin >= 0) {
-            pinMode(blPin, OUTPUT);
-            digitalWrite(blPin, HIGH); // Turn backlight on
+            ledcSetup(BL_CHANNEL, 5000, 8);      // 5 kHz, 8-bit PWM: flicker-free
+            ledcAttachPin(blPin, BL_CHANNEL);
+            writeBacklight(brightness);
         }
 
-        // Initialize ESP32 VSPI bus pins explicitly: SCK=18, MISO=19, MOSI=23, CS=settings.tftCS
-        SPI.begin(DEFAULT_TFT_SCLK, DEFAULT_TFT_MISO, DEFAULT_TFT_MOSI, settings.tftCS);
+        Serial.printf("[DISPLAY] Initializing ST7789 240x320 via TFT_eSPI (CS=%d, DC=%d, RST=%d)...\n",
+                      TFT_CS, TFT_DC, TFT_RST);
+        tft.init();
+        tft.setRotation(rotation);
+        activeDisplay = &tft;
 
-        if (displayType == DISPLAY_ST7789) {
-            Serial.printf("[DISPLAY] Initializing ST7789 (CS=%d, DC=%d, RST=%d)...\n",
-                          settings.tftCS, settings.tftDC, settings.tftRST);
-            st7789Display = new Adafruit_ST7789(settings.tftCS, settings.tftDC, settings.tftRST);
-            st7789Display->init(240, 320);
-            st7789Display->setRotation(rotation);
-            activeDisplay = st7789Display;
-        } else {
-            // Default: 2.8 inch SPI Touch Screen Module TFT 240x320 (ILI9341)
-            Serial.printf("[DISPLAY] Initializing ILI9341 2.8\" 240x320 (CS=%d, DC=%d, RST=%d)...\n",
-                          settings.tftCS, settings.tftDC, settings.tftRST);
-            ili9341Display = new Adafruit_ILI9341(settings.tftCS, settings.tftDC, settings.tftRST);
-            ili9341Display->begin();
-            ili9341Display->setRotation(rotation);
-            activeDisplay = ili9341Display;
-        }
-
-        if (activeDisplay) {
-            screenWidth = activeDisplay->width();
-            screenHeight = activeDisplay->height();
-            activeDisplay->fillScreen(COLOR_BLACK);
-            Serial.printf("[DISPLAY] TFT Display Ready: %dx%d (Rotation: %d)\n", screenWidth, screenHeight, rotation);
-        }
+        screenWidth = tft.width();
+        screenHeight = tft.height();
+        tft.fillScreen(COLOR_BLACK);
+        Serial.printf("[DISPLAY] TFT Display Ready: %dx%d (Rotation: %d), backlight %u/255\n",
+                      screenWidth, screenHeight, rotation, brightness);
     }
 
+    // 0..255. Full brightness is the default; lower it indoors if the screen is too bright.
+    void setBrightness(uint8_t level) {
+        brightness = level;
+        writeBacklight(level);
+    }
+
+    uint8_t getBrightness() const { return brightness; }
+
     // =========================================================================
-    // SCREEN 1: HOME PAGE
+    // HOME MENU: amount cards, UP / DOWN select, ENTER pays, RIGHT shows info
     // =========================================================================
-    void showHomeScreen(const String& apSSID, const String& staIP, bool staConnected,
-                        int ruleCount, const PaymentRule* rules, int selectedIndex = 0) {
+    void showMenuHome(const String& deviceName, bool serviceEnabled, bool staConnected,
+                      const String& staIP, int ruleCount, const PaymentRule* rules,
+                      int selectedIndex) {
         if (!activeDisplay) return;
+        const int w = screenWidth;
 
-        if (ruleCount < 0) ruleCount = 0;
-        if (selectedIndex < 0) selectedIndex = 0;
-        if (ruleCount > 0 && selectedIndex >= ruleCount) selectedIndex = ruleCount - 1;
+        // ---- Header: name left, Wi-Fi and service pills right ----
+        activeDisplay->fillRect(0, 0, w, HEADER_H, COLOR_WHITE);
 
-        float amount = (ruleCount > 0 && rules != nullptr) ? rules[selectedIndex].amount : 1.0f;
-        uint32_t durationSec = (ruleCount > 0 && rules != nullptr) ? rules[selectedIndex].durationSec : 3;
-        String amountText = formatAmount(amount);
-        String durationText = String(durationSec) + " sec power";
+        const int pillH = 24;
+        const int pillY = (HEADER_H - pillH) / 2;
 
-        String selectionText;
-        if (ruleCount > 1) {
-            selectionText = "AMOUNT " + String(selectedIndex + 1) + " OF " + String(ruleCount);
-        } else if (ruleCount == 1) {
-            selectionText = "SINGLE AMOUNT CONFIGURED";
+        const String svc = serviceEnabled ? "ON" : "STOP";
+        const int svcW = textW(svc, 2) + 16;
+        const int svcX = w - 6 - svcW;
+        activeDisplay->fillRoundRect(svcX, pillY, svcW, pillH, 5,
+                                     serviceEnabled ? COLOR_GREEN : COLOR_RED);
+        textCentered(svc, svcX, svcW, pillY + 4, 2, serviceEnabled ? COLOR_BLACK : COLOR_WHITE);
+
+        const String net = staConnected ? "WIFI" : "OFF";
+        const int netW = textW(net, 2) + 16;
+        const int netX = svcX - 6 - netW;
+        activeDisplay->fillRoundRect(netX, pillY, netW, pillH, 5,
+                                     staConnected ? COLOR_GREEN : COLOR_RED);
+        textCentered(net, netX, netW, pillY + 4, 2, staConnected ? COLOR_BLACK : COLOR_WHITE);
+
+        const int titleMax = netX - 6 - 8;
+        const uint8_t titleSize = fitSize(deviceName, titleMax, 3);
+        text(truncateToWidth(deviceName, titleMax, titleSize), 8,
+             (HEADER_H - textH(titleSize)) / 2, titleSize, COLOR_BLACK);
+
+        // ---- Body: 3 large amount cards (scrolls for more) ----
+        clearBody();
+        const int bodyTop = HEADER_H + 4;
+        const int bodyBottom = screenHeight - FOOTER_H - 4;
+        const int rowH = 50;
+        const int rowGap = 6;
+        const int listX = 6;
+        const int listW = w - 6 - 22;             // right 22 px is the scroll gutter
+        int maxRows = (bodyBottom - bodyTop + rowGap) / (rowH + rowGap);
+        if (maxRows < 1) maxRows = 1;
+
+        if (ruleCount <= 0 || rules == nullptr) {
+            textFit("NO CARDS", 6, w - 12, bodyTop + 24, 4, COLOR_YELLOW);
+            textFit("Add cards in admin app", 6, w - 12, bodyTop + 88, 2, COLOR_GRAY);
         } else {
-            selectionText = "DEFAULT AMOUNT";
+            if (selectedIndex < 0) selectedIndex = 0;
+            if (selectedIndex >= ruleCount) selectedIndex = ruleCount - 1;
+
+            // Keep the selected card near the middle of the visible window
+            int first = selectedIndex - maxRows / 2;
+            if (first > ruleCount - maxRows) first = ruleCount - maxRows;
+            if (first < 0) first = 0;
+
+            for (int row = 0; row < maxRows && (first + row) < ruleCount; row++) {
+                const int idx = first + row;
+                const int y = bodyTop + row * (rowH + rowGap);
+                const bool sel = (idx == selectedIndex);
+
+                if (sel) {
+                    // Selected: solid yellow card with black text (reads best in sun)
+                    activeDisplay->fillRoundRect(listX, y, listW, rowH, 6, COLOR_YELLOW);
+                } else {
+                    activeDisplay->fillRoundRect(listX, y, listW, rowH, 6, COLOR_BG);
+                    drawCard(listX, y, listW, rowH, COLOR_GRAY);
+                }
+
+                const String dur = String(rules[idx].durationSec) + "s";
+                const int durW = textW(dur, 2);
+                const String amount = formatAmount(rules[idx].amount);
+                const int amountMax = listW - 24 - durW - 12;
+                const uint8_t amountSize = fitSize(amount, amountMax, 4);
+                const uint16_t ink = sel ? COLOR_BLACK : COLOR_WHITE;
+
+                text(amount, listX + 12, y + (rowH - textH(amountSize)) / 2, amountSize, ink);
+                text(dur, listX + listW - 12 - durW, y + (rowH - textH(2)) / 2, 2,
+                     sel ? COLOR_BLACK : COLOR_YELLOW);
+            }
+
+            // Scroll markers in the gutter: more cards above / below the window
+            const int gx = w - 11;
+            if (first > 0) {
+                activeDisplay->fillTriangle(gx - 6, bodyTop + 10, gx + 6, bodyTop + 10,
+                                            gx, bodyTop + 2, COLOR_YELLOW);
+            }
+            if (first + maxRows < ruleCount) {
+                const int by = bodyBottom - 2;
+                activeDisplay->fillTriangle(gx - 6, by - 10, gx + 6, by - 10,
+                                            gx, by, COLOR_YELLOW);
+            }
         }
 
+        // ---- Footer: the three keys ----
+        if (serviceEnabled) {
+            drawFooter("UP/DN", "ENTER:PAY", "RIGHT:INFO", COLOR_GREEN);
+        } else {
+            drawFooter("UP/DN", "PAY OFF", "RIGHT:INFO", COLOR_RED);
+        }
+    }
+
+    // =========================================================================
+    // CONFIRM: big amount, shown before the QR is generated
+    // =========================================================================
+    void showConfirmScreen(float amount, uint32_t durationSec) {
+        if (!activeDisplay) return;
         activeDisplay->fillScreen(COLOR_BG);
+        drawHeader("CONFIRM PAYMENT", COLOR_WHITE, COLOR_BLACK);
 
-        if (screenWidth >= 300) {
-            // ================= Landscape (320x240) =================
-            // Header bar
-            activeDisplay->fillRect(0, 0, screenWidth, 36, COLOR_PANEL);
-            activeDisplay->setTextSize(2);
-            activeDisplay->setTextColor(COLOR_WHITE);
-            activeDisplay->setCursor(14, 10);
-            activeDisplay->print("PAYMENT GATEWAY");
+        textCentered("AMOUNT", 0, screenWidth, 50, 2, COLOR_GRAY);
+        textFit(formatAmount(amount), 10, screenWidth - 20, 74, 5, COLOR_GREEN);
+        textFit("Relay ON for " + String(durationSec) + " seconds", 6, screenWidth - 12,
+                134, 2, COLOR_YELLOW);
 
-            activeDisplay->setTextSize(1);
-            activeDisplay->setTextColor(staConnected ? COLOR_GREEN : COLOR_ORANGE);
-            activeDisplay->setCursor(screenWidth - 74, 15);
-            activeDisplay->print(staConnected ? "ONLINE" : "OFFLINE");
-            activeDisplay->fillCircle(screenWidth - 16, 18, 5,
-                                      staConnected ? COLOR_GREEN : COLOR_ORANGE);
-
-            // Selected amount card
-            int cardX = 20, cardY = 46, cardW = screenWidth - 40, cardH = 96;
-            activeDisplay->fillRoundRect(cardX, cardY, cardW, cardH, 8, COLOR_PANEL);
-            activeDisplay->drawRoundRect(cardX, cardY, cardW, cardH, 8, COLOR_CYAN);
-
-            drawCentered("SELECTED AMOUNT", cardX, cardW, cardY + 9, 1, COLOR_CYAN);
-            drawCenteredFit(amountText, cardX + 12, cardW - 24, cardY + 22, 5, COLOR_GREEN);
-            drawCentered(durationText, cardX, cardW, cardY + 64, 1, COLOR_YELLOW);
-            drawCentered(selectionText, cardX, cardW, cardY + 79, 1, COLOR_GRAY);
-
-            // Interaction cards (short press / long press)
-            int actionY = 152, actionH = 54, actionGap = 10;
-            int actionW = (screenWidth - 40 - actionGap) / 2;
-            int leftX = 20, rightX = leftX + actionW + actionGap;
-
-            activeDisplay->fillRoundRect(leftX, actionY, actionW, actionH, 7, COLOR_PANEL);
-            activeDisplay->drawRoundRect(leftX, actionY, actionW, actionH, 7, COLOR_DARK_GRAY);
-            drawCentered(ruleCount > 1 ? "SHORT PRESS" : "AMOUNT LOCKED",
-                         leftX, actionW, actionY + 8, 1, COLOR_GRAY);
-            drawCenteredFit(ruleCount > 1 ? "NEXT AMOUNT" : "READY",
-                            leftX, actionW, actionY + 25, 2, COLOR_WHITE);
-
-            activeDisplay->fillRoundRect(rightX, actionY, actionW, actionH, 7, 0x0320);
-            activeDisplay->drawRoundRect(rightX, actionY, actionW, actionH, 7, COLOR_GREEN);
-            drawCentered("HOLD 1.5s", rightX, actionW, actionY + 8, 1, COLOR_GREEN);
-            drawCenteredFit("START PAY", rightX, actionW, actionY + 25, 2, COLOR_WHITE);
-
-            // Footer: Wi-Fi status on the left, admin AP on the right
-            activeDisplay->fillRect(0, screenHeight - 22, screenWidth, 22, COLOR_PANEL);
-            activeDisplay->setTextSize(1);
-            activeDisplay->setTextColor(staConnected ? COLOR_CYAN : COLOR_ORANGE);
-            activeDisplay->setCursor(12, screenHeight - 15);
-            if (staConnected && staIP.length() > 0) {
-                activeDisplay->printf("WiFi: %s", staIP.c_str());
-            } else {
-                activeDisplay->print("WiFi: OFFLINE");
-            }
-
-            String apLabel = truncateToWidth("AP: " + apSSID, 118, 1);
-            int16_t x1, y1;
-            uint16_t tw, th;
-            activeDisplay->setTextSize(1);
-            activeDisplay->getTextBounds(apLabel.c_str(), 0, 0, &x1, &y1, &tw, &th);
-            activeDisplay->setTextColor(COLOR_GRAY);
-            activeDisplay->setCursor(screenWidth - 12 - (int16_t)tw - x1, screenHeight - 15);
-            activeDisplay->print(apLabel);
-        } else {
-            // ================= Portrait (240x320) =================
-            activeDisplay->fillRect(0, 0, screenWidth, 38, COLOR_PANEL);
-            activeDisplay->setTextSize(2);
-            activeDisplay->setTextColor(COLOR_WHITE);
-            activeDisplay->setCursor(12, 11);
-            activeDisplay->print("PAYMENT GATEWAY");
-
-            activeDisplay->fillCircle(screenWidth - 16, 19, 5,
-                                      staConnected ? COLOR_GREEN : COLOR_ORANGE);
-
-            // Selected amount card
-            int cardX = 14, cardY = 48, cardW = screenWidth - 28, cardH = 122;
-            activeDisplay->fillRoundRect(cardX, cardY, cardW, cardH, 8, COLOR_PANEL);
-            activeDisplay->drawRoundRect(cardX, cardY, cardW, cardH, 8, COLOR_CYAN);
-
-            drawCentered("SELECTED AMOUNT", cardX, cardW, cardY + 10, 1, COLOR_CYAN);
-            drawCenteredFit(amountText, cardX + 10, cardW - 20, cardY + 26, 5, COLOR_GREEN);
-            drawCentered(durationText, cardX, cardW, cardY + 68, 1, COLOR_YELLOW);
-            drawCentered(selectionText, cardX, cardW, cardY + 88, 1, COLOR_GRAY);
-
-            // Short press hint
-            int actionX = 14, actionW = screenWidth - 28;
-            int shortY = 182, shortH = 38;
-            activeDisplay->fillRoundRect(actionX, shortY, actionW, shortH, 7, COLOR_PANEL);
-            activeDisplay->drawRoundRect(actionX, shortY, actionW, shortH, 7, COLOR_DARK_GRAY);
-            drawCenteredFit(ruleCount > 1 ? "SHORT PRESS: CHANGE AMOUNT" : "SINGLE AMOUNT CONFIGURED",
-                            actionX, actionW, shortY + 15, 1, COLOR_WHITE);
-
-            // Long press to pay
-            int holdY = 230, holdH = 50;
-            activeDisplay->fillRoundRect(actionX, holdY, actionW, holdH, 7, 0x0320);
-            activeDisplay->drawRoundRect(actionX, holdY, actionW, holdH, 7, COLOR_GREEN);
-            drawCentered("HOLD 1.5s", actionX, actionW, holdY + 7, 1, COLOR_GREEN);
-            drawCenteredFit("START PAYMENT", actionX, actionW, holdY + 24, 2, COLOR_WHITE);
-
-            // Footer
-            activeDisplay->fillRect(0, screenHeight - 25, screenWidth, 25, COLOR_PANEL);
-            activeDisplay->setTextSize(1);
-            activeDisplay->setTextColor(staConnected ? COLOR_CYAN : COLOR_ORANGE);
-            activeDisplay->setCursor(10, screenHeight - 16);
-            if (staConnected && staIP.length() > 0) {
-                activeDisplay->printf("WiFi: %s", staIP.c_str());
-            } else {
-                String apFooter = truncateToWidth("AP: " + apSSID, screenWidth - 20, 1);
-                activeDisplay->print(apFooter);
-            }
-        }
-    }
-
-    // Alias for compatibility
-    void showReadyScreen(const String& apSSID, const String& staIP, bool staConnected,
-                         int ruleCount, const PaymentRule* rules, int selectedIndex = 0) {
-        showHomeScreen(apSSID, staIP, staConnected, ruleCount, rules, selectedIndex);
+        drawFooter("LEFT:BACK", "", "ENTER:SHOW QR", COLOR_WHITE);
     }
 
     // =========================================================================
-    // SCREEN 2: QR CODE & COUNTDOWN TIMER
+    // INFO: device identity and live status (RIGHT from home)
     // =========================================================================
-    void showQRScreen(const String& qrPayload, float amount, uint32_t durationSec, 
+    void showInfoScreen(const String& deviceName, const String& fwVersion, const String& apSSID,
+                        bool staConnected, const String& staIP, bool serviceEnabled, bool relayOn) {
+        if (!activeDisplay) return;
+        activeDisplay->fillScreen(COLOR_BG);
+        drawHeader("DEVICE INFO", COLOR_WHITE, COLOR_BLACK);
+
+        int y = HEADER_H + 8;
+        const int step = 28;
+        const int valueX = 112;   // clears the widest label ("Firmware" = 96 px)
+        const int valueMax = screenWidth - valueX - 6;
+        auto row = [&](const char* label, const String& value, uint16_t colour) {
+            text(label, 8, y, 2, COLOR_GRAY);
+            text(truncateToWidth(value, valueMax, 2), valueX, y, 2, colour);
+            y += step;
+        };
+
+        row("Name", deviceName, COLOR_WHITE);
+        row("Firmware", fwVersion, COLOR_WHITE);
+        row("Wi-Fi", (staConnected && staIP.length() > 0) ? staIP : String("offline"),
+            staConnected ? COLOR_GREEN : COLOR_RED);
+        row("Hotspot", apSSID, COLOR_CYAN);
+        row("Service", serviceEnabled ? String("ENABLED") : String("STOPPED"),
+            serviceEnabled ? COLOR_GREEN : COLOR_RED);
+        row("Relay", relayOn ? String("ON") : String("OFF"), relayOn ? COLOR_YELLOW : COLOR_GRAY);
+
+        drawFooter("LEFT:BACK", "", "", COLOR_WHITE);
+    }
+
+    // =========================================================================
+    // NOTICE: full-screen message that closes itself
+    // =========================================================================
+    void showNoticeScreen(const String& title, const String& message, uint16_t colour) {
+        if (!activeDisplay) return;
+        activeDisplay->fillScreen(COLOR_BG);
+        const uint16_t ink = (colour == COLOR_RED) ? COLOR_WHITE : COLOR_BLACK;
+        drawHeader(title, colour, ink);
+        textFit(message, 8, screenWidth - 16, HEADER_H + (screenHeight - HEADER_H) / 2 - 16,
+                3, COLOR_WHITE);
+    }
+
+    // =========================================================================
+    // QR: scannable code on the left, amount in the header, live countdown
+    // =========================================================================
+    static constexpr int QR_X = 6;
+    static constexpr int QR_Y = HEADER_H + 4;
+    static constexpr int QR_SIZE = 164;
+    static constexpr int PANEL_X = 180;
+    static constexpr int PANEL_W = 134;
+
+    void showQRScreen(const String& qrPayload, float amount, uint32_t durationSec,
                       const String& qrId, uint32_t remainingSec) {
         if (!activeDisplay) return;
         activeDisplay->fillScreen(COLOR_BG);
+        drawHeader("PAY " + formatAmount(amount), COLOR_WHITE, COLOR_BLACK);
 
-        if (screenWidth >= 300) {
-            // Landscape Layout (320x240)
-            // 1. Header Bar with Amount
-            activeDisplay->fillRect(0, 0, screenWidth, 36, COLOR_PANEL);
-            activeDisplay->setTextSize(2);
-            activeDisplay->setTextColor(COLOR_GREEN);
-            activeDisplay->setCursor(12, 10);
-            activeDisplay->printf("PAY Rs. %.2f", amount);
+        // White QR card with black modules (highest contrast possible)
+        QRCodeRenderer::renderToDisplay(activeDisplay, qrPayload, QR_X, QR_Y, QR_SIZE,
+                                        COLOR_BLACK, COLOR_WHITE);
 
-            activeDisplay->setTextSize(1);
-            activeDisplay->setTextColor(COLOR_YELLOW);
-            activeDisplay->setCursor(screenWidth - 105, 14);
-            activeDisplay->printf("%u Sec Load", durationSec);
+        // Right panel: instructions, timer, provider
+        drawCard(PANEL_X, QR_Y, PANEL_W, QR_SIZE, COLOR_GRAY);
+        const int tx = PANEL_X + 8;
+        text("SCAN WITH", tx, QR_Y + 8, 2, COLOR_WHITE);
+        text("ANY UPI", tx, QR_Y + 26, 2, COLOR_WHITE);
+        activeDisplay->drawFastHLine(PANEL_X + 6, QR_Y + 50, PANEL_W - 12, COLOR_DARK_GRAY);
 
-            // 2. High-contrast QR Code Card (Left Side)
-            int cardSize = 172;
-            int cardX = 8;
-            int cardY = 42;
-            QRCodeRenderer::renderToDisplay(activeDisplay, qrPayload, cardX, cardY, cardSize, COLOR_BLACK, COLOR_WHITE);
+        text("TIME LEFT", tx, QR_Y + 58, 2, COLOR_YELLOW);
+        updateQRCountdown(remainingSec);
 
-            // 3. Right Side Panel: App Hints and Countdown Timer
-            int infoX = 186;
-            int panelW = screenWidth - infoX - 8;
-            activeDisplay->fillRoundRect(infoX, 42, panelW, 172, 6, COLOR_PANEL);
-            activeDisplay->drawRoundRect(infoX, 42, panelW, 172, 6, COLOR_CYAN);
+        text("Razorpay", tx, QR_Y + 118, 2, COLOR_GREEN);
+        text("VERIFIED", tx, QR_Y + 138, 2, COLOR_GRAY);
 
-            activeDisplay->setTextSize(1);
-            activeDisplay->setTextColor(COLOR_CYAN);
-            activeDisplay->setCursor(infoX + 10, 52);
-            activeDisplay->print("SCAN & PAY VIA:");
-
-            activeDisplay->setTextColor(COLOR_WHITE);
-            activeDisplay->setCursor(infoX + 10, 68);
-            activeDisplay->print(" Google Pay");
-            activeDisplay->setCursor(infoX + 10, 82);
-            activeDisplay->print(" PhonePe / Paytm");
-            activeDisplay->setCursor(infoX + 10, 96);
-            activeDisplay->print(" Any UPI App");
-
-            activeDisplay->drawFastHLine(infoX + 8, 114, panelW - 16, COLOR_DARK_GRAY);
-
-            activeDisplay->setTextColor(COLOR_YELLOW);
-            activeDisplay->setCursor(infoX + 10, 122);
-            activeDisplay->print("Time Left:");
-
-            // Countdown digits
-            activeDisplay->setTextSize(2);
-            activeDisplay->setTextColor(COLOR_WHITE);
-            activeDisplay->setCursor(infoX + 10, 138);
-            activeDisplay->printf("%02d:%02d", remainingSec / 60, remainingSec % 60);
-
-            activeDisplay->drawFastHLine(infoX + 8, 162, panelW - 16, COLOR_DARK_GRAY);
-
-            activeDisplay->setTextSize(1);
-            activeDisplay->setTextColor(COLOR_GREEN);
-            activeDisplay->setCursor(infoX + 10, 170);
-            activeDisplay->print("Razorpay");
-            activeDisplay->setTextColor(COLOR_GRAY);
-            activeDisplay->setCursor(infoX + 10, 184);
-            activeDisplay->print("Verified QR");
-
-            // 4. Bottom Footer Status Line
-            activeDisplay->fillRect(0, screenHeight - 18, screenWidth, 18, COLOR_PANEL);
-            activeDisplay->setTextSize(1);
-            activeDisplay->setTextColor(COLOR_CYAN);
-            activeDisplay->setCursor(10, screenHeight - 13);
-            activeDisplay->print("Waiting for payment...");
-        } else {
-            // Portrait Layout (240x320)
-            activeDisplay->fillRect(0, 0, screenWidth, 36, COLOR_PANEL);
-            activeDisplay->setTextSize(2);
-            activeDisplay->setTextColor(COLOR_GREEN);
-            activeDisplay->setCursor(10, 10);
-            activeDisplay->printf("PAY Rs. %.2f", amount);
-
-            int cardSize = 196;
-            int cardX = (screenWidth - cardSize) / 2;
-            int cardY = 42;
-            QRCodeRenderer::renderToDisplay(activeDisplay, qrPayload, cardX, cardY, cardSize, COLOR_BLACK, COLOR_WHITE);
-
-            activeDisplay->setTextSize(1);
-            activeDisplay->setTextColor(COLOR_CYAN);
-            activeDisplay->setCursor(15, 248);
-            activeDisplay->print("Scan via GPay, PhonePe, Paytm, UPI");
-
-            activeDisplay->setTextColor(COLOR_YELLOW);
-            activeDisplay->setCursor(15, 268);
-            activeDisplay->print("Expires in: ");
-            activeDisplay->setTextSize(2);
-            activeDisplay->setTextColor(COLOR_WHITE);
-            activeDisplay->printf("%02d:%02d", remainingSec / 60, remainingSec % 60);
-
-            activeDisplay->fillRect(0, screenHeight - 18, screenWidth, 18, COLOR_PANEL);
-            activeDisplay->setTextSize(1);
-            activeDisplay->setTextColor(COLOR_GRAY);
-            activeDisplay->setCursor(10, screenHeight - 13);
-            activeDisplay->print("Awaiting payment verification...");
-        }
+        drawFooter("LEFT:CANCEL", "", "WAITING", COLOR_YELLOW);
     }
 
-    // Update ONLY the timer digits every second (zero screen redraw, zero flicker)
+    // Redraws only the timer (no flicker). Turns red in the last 30 s, orange in the last minute.
     void updateQRCountdown(uint32_t remainingSec) {
         if (!activeDisplay) return;
+        const int x = PANEL_X + 8;
+        const int y = QR_Y + 78;
+        activeDisplay->fillRect(x - 2, y - 2, PANEL_W - 12, textH(3) + 4, COLOR_BG);
 
-        if (screenWidth >= 300) {
-            int infoX = 186;
-            int timerX = infoX + 10;
-            int timerY = 138;
-            int timerW = 75;
-            int timerH = 18;
+        uint16_t colour = COLOR_WHITE;
+        if (remainingSec <= 30) colour = COLOR_RED;
+        else if (remainingSec <= 60) colour = COLOR_ORANGE;
 
-            activeDisplay->fillRect(timerX, timerY, timerW, timerH, COLOR_PANEL);
-            if (remainingSec <= 30) {
-                activeDisplay->setTextColor(COLOR_RED);
-            } else if (remainingSec <= 60) {
-                activeDisplay->setTextColor(COLOR_ORANGE);
-            } else {
-                activeDisplay->setTextColor(COLOR_WHITE);
-            }
-            activeDisplay->setTextSize(2);
-            activeDisplay->setCursor(timerX, timerY);
-            activeDisplay->printf("%02d:%02d", remainingSec / 60, remainingSec % 60);
-        } else {
-            int timerX = 145;
-            int timerY = 268;
-            int timerW = 75;
-            int timerH = 18;
-
-            activeDisplay->fillRect(timerX, timerY, timerW, timerH, COLOR_BG);
-            if (remainingSec <= 30) {
-                activeDisplay->setTextColor(COLOR_RED);
-            } else if (remainingSec <= 60) {
-                activeDisplay->setTextColor(COLOR_ORANGE);
-            } else {
-                activeDisplay->setTextColor(COLOR_WHITE);
-            }
-            activeDisplay->setTextSize(2);
-            activeDisplay->setCursor(timerX, timerY);
-            activeDisplay->printf("%02d:%02d", remainingSec / 60, remainingSec % 60);
-        }
+        char buf[8];
+        snprintf(buf, sizeof(buf), "%02lu:%02lu",
+                 (unsigned long)(remainingSec / 60), (unsigned long)(remainingSec % 60));
+        text(String(buf), x, y, 3, colour);
     }
 
     // =========================================================================
-    // SCREEN 3: PAYMENT SUCCESSFUL (WITH LIVE RELAY STATUS)
+    // PAYMENT SUCCESS: amount, live relay countdown
     // =========================================================================
     void showPaymentSuccessScreen(float amount, uint32_t durationSec, uint32_t remainingRelaySec = 3) {
         if (!activeDisplay) return;
         activeDisplay->fillScreen(COLOR_BG);
+        drawHeader("PAYMENT SUCCESSFUL", COLOR_EMERALD, COLOR_BLACK);
 
-        // Header Banner
-        activeDisplay->fillRect(0, 0, screenWidth, 42, COLOR_EMERALD);
-        drawCentered("PAYMENT SUCCESSFUL!", 0, screenWidth, 13, 2, COLOR_WHITE);
+        textFit("PAID " + formatAmount(amount), 6, screenWidth - 12, HEADER_H + 10, 4, COLOR_GREEN);
+        updatePaymentSuccessRelayStatus(remainingRelaySec);
+        textFit("Power on for " + String(durationSec) + " seconds", 6, screenWidth - 12,
+                HEADER_H + 110, 2, COLOR_YELLOW);
 
-        // Center Confirmation Card
-        activeDisplay->fillRoundRect(12, 54, screenWidth - 24, 140, 8, COLOR_PANEL);
-        activeDisplay->drawRoundRect(12, 54, screenWidth - 24, 140, 8, COLOR_GREEN);
-
-        if (screenWidth >= 300) {
-            // Landscape Layout
-            // Green OK badge
-            activeDisplay->fillCircle(50, 124, 24, COLOR_GREEN);
-            activeDisplay->setTextSize(2);
-            activeDisplay->setTextColor(COLOR_BLACK);
-            activeDisplay->setCursor(39, 117);
-            activeDisplay->print("OK");
-
-            // Amount Paid
-            drawCenteredFit("PAID: " + formatAmount(amount),
-                            88, screenWidth - 88 - 22, 68, 2, COLOR_GREEN);
-            drawCentered("Transaction Captured & Verified",
-                         88, screenWidth - 88 - 22, 94, 1, COLOR_WHITE);
-
-            // LIVE RELAY STATUS BOX
-            int badgeX = 88;
-            int badgeY = 112;
-            int badgeW = screenWidth - badgeX - 22;
-            int badgeH = 34;
-            activeDisplay->fillRoundRect(badgeX, badgeY, badgeW, badgeH, 6, 0x0320); // Dark emerald
-            activeDisplay->drawRoundRect(badgeX, badgeY, badgeW, badgeH, 6, COLOR_GREEN);
-            drawCenteredFit("RELAY: OPEN [" + String(remainingRelaySec) + "s]",
-                            badgeX, badgeW, badgeY + 9, 2, COLOR_WHITE);
-
-            // Subtext note
-            drawCentered("Power Output Active for " + String(durationSec) + " Seconds",
-                         88, screenWidth - 88 - 22, 158, 1, COLOR_YELLOW);
-        } else {
-            // Portrait Layout
-            activeDisplay->fillCircle(screenWidth / 2, 90, 22, COLOR_GREEN);
-            activeDisplay->setTextSize(2);
-            activeDisplay->setTextColor(COLOR_BLACK);
-            activeDisplay->setCursor((screenWidth / 2) - 11, 83);
-            activeDisplay->print("OK");
-
-            drawCenteredFit("PAID: " + formatAmount(amount),
-                            12, screenWidth - 24, 122, 2, COLOR_GREEN);
-
-            int badgeX = 12;
-            int badgeY = 146;
-            int badgeW = screenWidth - 24;
-            int badgeH = 34;
-            activeDisplay->fillRoundRect(badgeX, badgeY, badgeW, badgeH, 6, 0x0320);
-            activeDisplay->drawRoundRect(badgeX, badgeY, badgeW, badgeH, 6, COLOR_GREEN);
-            drawCenteredFit("RELAY: OPEN [" + String(remainingRelaySec) + "s]",
-                            badgeX, badgeW, badgeY + 9, 2, COLOR_WHITE);
-
-            // Subtext note (keeps the portrait layout balanced)
-            drawCentered("Power Output Active for " + String(durationSec) + " Seconds",
-                         12, screenWidth - 24, 208, 1, COLOR_YELLOW);
-        }
-
-        // Bottom Footer
-        activeDisplay->fillRect(0, screenHeight - 22, screenWidth, 22, COLOR_PANEL);
-        activeDisplay->setTextSize(1);
-        activeDisplay->setTextColor(COLOR_GREEN);
-        activeDisplay->setCursor(16, screenHeight - 15);
-        activeDisplay->print("STATUS: RELAY ENERGIZED / OPEN");
+        drawFooter("", "RELAY ENERGIZED", "", COLOR_GREEN);
     }
 
-    // Live update of relay remaining time on Payment Success screen (zero flicker)
+    // Redraws only the relay status box (no flicker)
     void updatePaymentSuccessRelayStatus(uint32_t remainingRelaySec) {
         if (!activeDisplay) return;
+        const int bx = 10, by = HEADER_H + 62, bw = screenWidth - 20, bh = 40;
 
-        if (screenWidth >= 300) {
-            int badgeX = 88;
-            int badgeY = 112;
-            int badgeW = screenWidth - badgeX - 22;
-            int badgeH = 34;
+        activeDisplay->fillRoundRect(bx, by, bw, bh, 6, COLOR_BG);
+        drawCard(bx, by, bw, bh, COLOR_GREEN);
 
-            activeDisplay->fillRoundRect(badgeX, badgeY, badgeW, badgeH, 6, 0x0320);
-            activeDisplay->drawRoundRect(badgeX, badgeY, badgeW, badgeH, 6, COLOR_GREEN);
-
-            String relayText = (remainingRelaySec > 0)
-                                   ? "RELAY: OPEN [" + String(remainingRelaySec) + "s]"
-                                   : "RELAY: CLOSED [OFF]";
-            drawCenteredFit(relayText, badgeX, badgeW, badgeY + 9, 2, COLOR_WHITE);
-        } else {
-            int badgeX = 12;
-            int badgeY = 146;
-            int badgeW = screenWidth - 24;
-            int badgeH = 34;
-
-            activeDisplay->fillRoundRect(badgeX, badgeY, badgeW, badgeH, 6, 0x0320);
-            activeDisplay->drawRoundRect(badgeX, badgeY, badgeW, badgeH, 6, COLOR_GREEN);
-
-            String relayText = (remainingRelaySec > 0)
-                                   ? "RELAY: OPEN [" + String(remainingRelaySec) + "s]"
-                                   : "RELAY: CLOSED [OFF]";
-            drawCenteredFit(relayText, badgeX, badgeW, badgeY + 9, 2, COLOR_WHITE);
-        }
-    }
-
-    // Compatibility alias
-    void showPaymentSuccess(float amount, uint32_t durationSec) {
-        showPaymentSuccessScreen(amount, durationSec, durationSec);
+        String relayText = (remainingRelaySec > 0)
+                               ? "RELAY ON " + String(remainingRelaySec) + "s"
+                               : String("RELAY OFF");
+        textFit(relayText, bx + 6, bw - 12, by + (bh - textH(3)) / 2, 3, COLOR_GREEN);
     }
 
     // =========================================================================
-    // SCREEN 4: PAYMENT FAILED
+    // PAYMENT FAILED
     // =========================================================================
     void showPaymentFailedScreen(const String& reason = "Payment Expired") {
         if (!activeDisplay) return;
         activeDisplay->fillScreen(COLOR_BG);
-
-        // Header Banner
-        activeDisplay->fillRect(0, 0, screenWidth, 44, COLOR_CRIMSON);
-        drawCentered("PAYMENT FAILED!", 0, screenWidth, 14, 2, COLOR_WHITE);
-
-        // Center Error Card (fits both landscape and portrait)
-        int cardX = 15;
-        int cardY = (screenWidth >= 300) ? 54 : 56;
-        int cardW = screenWidth - 30;
-        int cardH = screenHeight - cardY - 32;
-        activeDisplay->fillRoundRect(cardX, cardY, cardW, cardH, 8, COLOR_PANEL);
-        activeDisplay->drawRoundRect(cardX, cardY, cardW, cardH, 8, COLOR_RED);
-
-        // Vertically center the content block inside the card
-        const int contentH = 156;
-        int contentY = cardY + (cardH - contentH) / 2;
+        drawHeader("PAYMENT FAILED", COLOR_RED, COLOR_WHITE);
 
         // Red X badge
-        int badgeCX = screenWidth / 2;
-        int badgeCY = contentY + 30;
-        activeDisplay->fillCircle(badgeCX, badgeCY, 24, COLOR_RED);
-        drawCentered("X", badgeCX - 24, 48, badgeCY - 12, 3, COLOR_WHITE);
+        const int cx = screenWidth / 2;
+        const int cy = HEADER_H + 34;
+        activeDisplay->fillCircle(cx, cy, 22, COLOR_RED);
+        textCentered("X", cx - 20, 40, cy - 12, 3, COLOR_WHITE);
 
-        // Error message
-        String displayReason = reason.length() > 0 ? reason : "Timeout / Expired";
-        if (displayReason.length() > 24) displayReason = displayReason.substring(0, 24);
-        drawCenteredFit(displayReason, cardX + 10, cardW - 20, contentY + 66, 2, COLOR_RED);
+        String shown = reason.length() > 0 ? reason : String("Timeout / Expired");
+        if (shown.length() > 24) shown = shown.substring(0, 24);
+        textFit(shown, 6, screenWidth - 12, HEADER_H + 66, 3, COLOR_WHITE);
 
-        drawCentered("Transaction was not completed.", cardX + 6, cardW - 12, contentY + 98, 1, COLOR_WHITE);
-        drawCentered("No amount was charged.", cardX + 6, cardW - 12, contentY + 114, 1, COLOR_GRAY);
-        drawCentered("Relay safely remained OFF.", cardX + 6, cardW - 12, contentY + 134, 1, COLOR_YELLOW);
+        textFit("No amount was charged", 6, screenWidth - 12, HEADER_H + 102, 2, COLOR_GRAY);
+        textFit("Relay stayed OFF", 6, screenWidth - 12, HEADER_H + 124, 2, COLOR_YELLOW);
 
-        // Bottom Footer
-        activeDisplay->fillRect(0, screenHeight - 22, screenWidth, 22, COLOR_PANEL);
-        drawCentered("Returning to Home screen...", 0, screenWidth, screenHeight - 15, 1, COLOR_YELLOW);
-    }
-
-    // Compatibility alias
-    void showErrorScreen(const String& errorMsg) {
-        showPaymentFailedScreen(errorMsg);
+        drawFooter("", "Returning to home...", "", COLOR_YELLOW);
     }
 };
 

@@ -22,6 +22,8 @@ public:
     }
 
     void loadDefaultSettings() {
+        strncpy(settings.deviceName, DEFAULT_DEVICE_NAME, sizeof(settings.deviceName) - 1);
+        settings.serviceEnabled = true;
         strncpy(settings.apSSID, DEFAULT_AP_SSID, sizeof(settings.apSSID) - 1);
         strncpy(settings.apPass, DEFAULT_AP_PASS, sizeof(settings.apPass) - 1);
         settings.staSSID[0] = '\0';
@@ -35,7 +37,7 @@ public:
         settings.relayActiveHigh = DEFAULT_RELAY_ACTIVE_HIGH;
         settings.debugMode = DEFAULT_DEBUG_MODE;
 
-        settings.displayType = DEFAULT_DISPLAY_TYPE; // ILI9341 for 2.8" SPI TFT
+        settings.displayType = DEFAULT_DISPLAY_TYPE; // ST7789 for the KMRTM24024-SPI 2.8" TFT
         settings.tftCS = DEFAULT_TFT_CS;
         settings.tftDC = DEFAULT_TFT_DC;
         settings.tftRST = DEFAULT_TFT_RST;
@@ -58,6 +60,11 @@ public:
             return;
         }
 
+        prefs.getString("deviceName", settings.deviceName, sizeof(settings.deviceName));
+        if (settings.deviceName[0] == '\0') {
+            strncpy(settings.deviceName, DEFAULT_DEVICE_NAME, sizeof(settings.deviceName) - 1);
+        }
+        settings.serviceEnabled = prefs.getBool("svcEnabled", true);
         prefs.getString("apSSID", settings.apSSID, sizeof(settings.apSSID));
         prefs.getString("apPass", settings.apPass, sizeof(settings.apPass));
         prefs.getString("staSSID", settings.staSSID, sizeof(settings.staSSID));
@@ -100,6 +107,8 @@ public:
     }
 
     void saveSettings() {
+        prefs.putString("deviceName", settings.deviceName);
+        prefs.putBool("svcEnabled", settings.serviceEnabled);
         prefs.putString("apSSID", settings.apSSID);
         prefs.putString("apPass", settings.apPass);
         prefs.putString("staSSID", settings.staSSID);

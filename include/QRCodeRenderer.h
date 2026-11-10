@@ -3,7 +3,7 @@
 
 #include <Arduino.h>
 #include <qrcode.h>   // ESP-IDF built-in QR encoder (esp_qrcode_*)
-#include <Adafruit_GFX.h>
+#include <TFT_eSPI.h>
 
 // Max QR version to allow (Version 15 ECC LOW holds ~520 bytes, plenty for UPI payloads)
 #define QR_MAX_VERSION 15
@@ -11,7 +11,7 @@
 class QRCodeRenderer {
 private:
     struct DisplayCtx {
-        Adafruit_GFX* display;
+        TFT_eSPI* display;
         int cardX;
         int cardY;
         int cardSize;
@@ -76,8 +76,8 @@ private:
     }
 
 public:
-    // Render QR Code onto Adafruit GFX display inside a high-contrast white card
-    static bool renderToDisplay(Adafruit_GFX* display, const String& text,
+    // Render QR Code onto the TFT_eSPI display inside a high-contrast white card
+    static bool renderToDisplay(TFT_eSPI* display, const String& text,
                                 int cardX, int cardY, int cardSize,
                                 uint16_t fgColor = 0x0000, uint16_t bgColor = 0xFFFF) {
         if (!display || text.length() == 0) return false;

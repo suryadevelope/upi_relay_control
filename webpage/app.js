@@ -402,6 +402,14 @@ document.addEventListener('DOMContentLoaded', () => {
   setupEventListeners();
   loadCartFromStorage();
   updateCartUI();
+  for (let index = 0; index < 50; index++){
+    
+    if(document.getElementById("nl-badge")){
+      document.getElementById("nl-badge").remove()
+      break;
+    }
+  
+  }
 });
 
 // ===================================================================
