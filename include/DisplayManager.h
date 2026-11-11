@@ -343,6 +343,51 @@ public:
     }
 
     // =========================================================================
+    // LOADING: shown from ENTER until the cloud returns the QR (bar keeps moving)
+    // =========================================================================
+    static constexpr int LOAD_BAR_X = 20;
+    static constexpr int LOAD_BAR_Y = 92;
+    static constexpr int LOAD_BAR_H = 36;
+
+    void showLoadingScreen(float amount) {
+        if (!activeDisplay) return;
+        activeDisplay->fillScreen(COLOR_BG);
+        drawHeader("PREPARING QR", COLOR_WHITE, COLOR_BLACK);
+
+        textFit(formatAmount(amount), 6, screenWidth - 12, HEADER_H + 8, 4, COLOR_GREEN);
+        textCentered("Contacting bank...", 0, screenWidth, LOAD_BAR_Y - 30, 2, COLOR_YELLOW);
+
+        const int bw = screenWidth - 2 * LOAD_BAR_X;
+        drawCard(LOAD_BAR_X, LOAD_BAR_Y, bw, LOAD_BAR_H, COLOR_WHITE);
+        updateLoadingBar(0);
+    }
+
+    // Moves the sliding block and the elapsed counter. Called every ~50 ms.
+    void updateLoadingBar(uint32_t elapsedMs) {
+        if (!activeDisplay) return;
+        const int bw = screenWidth - 2 * LOAD_BAR_X;
+        const int inX = LOAD_BAR_X + 4;
+        const int inW = bw - 8;
+        const int inY = LOAD_BAR_Y + 4;
+        const int inH = LOAD_BAR_H - 8;
+        const int block = 70;
+        const int travel = inW - block;
+        const int period = 2 * travel;
+
+        // Clear the bar interior, then draw the block bouncing left and right
+        activeDisplay->fillRect(inX, inY, inW, inH, COLOR_BG);
+        int phase = (int)((elapsedMs / 5) % (uint32_t)period);
+        int x = (phase <= travel) ? phase : (period - phase);
+        activeDisplay->fillRect(inX + x, inY, block, inH, COLOR_YELLOW);
+
+        // Elapsed seconds under the bar
+        char buf[24];
+        snprintf(buf, sizeof(buf), "Please wait  %lus", (unsigned long)(elapsedMs / 1000));
+        activeDisplay->fillRect(0, LOAD_BAR_Y + LOAD_BAR_H + 10, screenWidth, 20, COLOR_BG);
+        textCentered(String(buf), 0, screenWidth, LOAD_BAR_Y + LOAD_BAR_H + 12, 2, COLOR_GRAY);
+    }
+
+    // =========================================================================
     // QR: scannable code on the left, amount in the header, live countdown
     // =========================================================================
     static constexpr int QR_X = 6;

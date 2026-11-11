@@ -29,10 +29,21 @@ enum MenuScreen {
     MENU_HOME,      // Amount card list (UP/DOWN select, ENTER pay, RIGHT info)
     MENU_CONFIRM,   // Confirm the selected card (ENTER show QR, LEFT back)
     MENU_INFO,      // Device info (LEFT back)
-    MENU_NOTICE     // Short message; returns to HOME automatically
+    MENU_NOTICE,    // Short message; returns to HOME automatically
+    MENU_LOADING    // Waiting for the cloud to create the QR (buttons locked)
 };
 MenuScreen menuScreen = MENU_HOME;
 unsigned long noticeUntil = 0;
+
+// QR request running on a background task, so the loading bar keeps animating
+volatile bool qrRequestBusy = false;
+volatile bool qrRequestDone = false;
+bool qrReqOk = false;
+String qrReqId, qrReqPayload, qrReqError;
+float qrReqAmount = 0.0f;
+uint32_t qrReqDuration = 0;
+unsigned long qrRequestStart = 0;
+unsigned long lastLoadingFrame = 0;
 
 // Active payment session
 String activeQrId = "";
@@ -58,6 +69,8 @@ void refreshMenu();
 void showNotice(const String& title, const String& msg, uint16_t color, unsigned long ms);
 void handleButton(ButtonEvent ev);
 void startSelectedPayment();
+void finishQRRequest();
+void showNewQRSession(const String& qrId, const String& qrPayload, float amount, uint32_t duration);
 void onRelayFinished();
 void syncRuntime();
 
@@ -133,7 +146,7 @@ void loop() {
         DeviceSettings& cfg = storage.getSettings();
         paymentClient.setConfig(cfg.backendUrl, cfg.deviceKey);
         Serial.printf("[MAIN] Configuration applied (backend: %s)\n", cfg.backendUrl);
-        if (relay.getState() == STATE_READY && menuScreen != MENU_NOTICE) {
+        if (relay.getState() == STATE_READY && menuScreen != MENU_NOTICE && menuScreen != MENU_LOADING) {
             normalizeSelectedRule();
             refreshMenu();
         }
@@ -141,6 +154,19 @@ void loop() {
 
     // 2. Menu navigation
     handleButton(buttons.poll());
+
+    // 2b. Background QR request: animate the loading bar and pick up the result
+    if (qrRequestBusy) {
+        unsigned long now = millis();
+        if (now - lastLoadingFrame >= 50) {
+            lastLoadingFrame = now;
+            display.updateLoadingBar(now - qrRequestStart);
+        }
+        if (qrRequestDone) {
+            qrRequestBusy = false;
+            finishQRRequest();
+        }
+    }
 
     // 3. Relay timer (non-blocking)
     if (relay.update()) {
@@ -291,6 +317,12 @@ bool triggerNewPayment(float amount, uint32_t duration, String& outError) {
         return false;
     }
 
+    showNewQRSession(qrId, qrPayload, amount, duration);
+    return true;
+}
+
+// Switches to the QR screen and starts polling for this session
+void showNewQRSession(const String& qrId, const String& qrPayload, float amount, uint32_t duration) {
     activeQrId = qrId;
     activeQrPayload = qrPayload;
     activeAmount = amount;
@@ -311,7 +343,43 @@ bool triggerNewPayment(float amount, uint32_t duration, String& outError) {
 
     Serial.printf("[MAIN] QR shown. ID=%s, Amount=Rs. %.2f, Relay=%us\n",
                   activeQrId.c_str(), activeAmount, activeDuration);
-    return true;
+}
+
+// Runs on its own task: the blocking HTTPS call never freezes the loading bar
+void qrRequestTask(void* param) {
+    String id, payload, err;
+    bool ok = paymentClient.createQRSession(qrReqAmount, qrReqDuration, id, payload, err);
+    qrReqId = id;
+    qrReqPayload = payload;
+    qrReqError = err;
+    qrReqOk = ok;
+    __sync_synchronize();   // results must be visible before the flag is seen
+    qrRequestDone = true;
+    vTaskDelete(nullptr);
+}
+
+// Called from the main loop when the background request has finished
+void finishQRRequest() {
+    unsigned long waited = millis() - qrRequestStart;
+    DeviceSettings& s = storage.getSettings();
+
+    if (!s.serviceEnabled) {
+        // Admin stopped the service while we were waiting: never show a QR
+        relay.setState(STATE_ERROR);
+        errorStartTime = millis();
+        display.showPaymentFailedScreen("Service stopped");
+        return;
+    }
+    if (!qrReqOk) {
+        Serial.printf("[MAIN] Failed to create payment QR after %lu ms: %s\n",
+                      waited, qrReqError.c_str());
+        relay.setState(STATE_ERROR);
+        errorStartTime = millis();
+        display.showPaymentFailedScreen(qrReqError);
+        return;
+    }
+    Serial.printf("[MAIN] QR ready in %lu ms\n", waited);
+    showNewQRSession(qrReqId, qrReqPayload, qrReqAmount, qrReqDuration);
 }
 
 // Clears the payment session fields (does not touch the relay or the screen)
@@ -391,7 +459,8 @@ void refreshMenu() {
             break;
 
         case MENU_NOTICE:
-            break; // drawn by showNotice()
+        case MENU_LOADING:
+            break; // drawn by showNotice() / showLoadingScreen()
     }
 }
 
@@ -426,6 +495,7 @@ void handleButton(ButtonEvent ev) {
     // Paying / relay running / error screen: buttons are locked
     if (st != STATE_READY) return;
     if (menuScreen == MENU_NOTICE) return;
+    if (menuScreen == MENU_LOADING) return;   // buttons locked while the QR is being made
 
     DeviceSettings& s = storage.getSettings();
 
@@ -491,10 +561,27 @@ void startSelectedPayment() {
     float amount = s.rules[selectedRuleIndex].amount;
     uint32_t duration = s.rules[selectedRuleIndex].durationSec;
 
+    if (qrRequestBusy) return;   // one request at a time
+
     Serial.printf("[MENU] Paying Rs. %.2f for %u s\n", amount, duration);
-    String err;
-    if (!triggerNewPayment(amount, duration, err)) {
-        Serial.printf("[MENU] Could not start payment: %s\n", err.c_str());
+
+    // Show the loading bar at once, then ask the cloud in the background
+    qrReqAmount = amount;
+    qrReqDuration = duration;
+    qrRequestDone = false;
+    qrRequestBusy = true;
+    qrRequestStart = millis();
+    lastLoadingFrame = 0;
+    menuScreen = MENU_LOADING;
+    display.showLoadingScreen(amount);
+
+    BaseType_t created = xTaskCreatePinnedToCore(qrRequestTask, "qr_request", 12288,
+                                                 nullptr, 1, nullptr, 0);
+    if (created != pdPASS) {
+        qrRequestBusy = false;
+        qrReqOk = false;
+        qrReqError = "Could not start request";
+        finishQRRequest();
     }
 }
 

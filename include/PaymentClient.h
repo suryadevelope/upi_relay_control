@@ -66,7 +66,7 @@ public:
 
         http.addHeader("Content-Type", "application/json");
         http.addHeader("X-Device-Key", deviceKey);
-        http.setTimeout(10000); // 10s timeout
+        http.setTimeout(20000); // QR creation takes 5-9 s through the cloud; 10 s was too tight
 
         JsonDocument reqDoc;
         reqDoc["amount"] = amount;
@@ -146,7 +146,7 @@ public:
         }
 
         http.addHeader("X-Device-Key", deviceKey);
-        http.setTimeout(8000);
+        http.setTimeout(5000);
 
         int httpCode = http.GET();
         if (httpCode <= 0) {

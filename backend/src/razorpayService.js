@@ -89,11 +89,13 @@ class RazorpayService {
       };
 
       console.log('[RAZORPAY] Calling API POST /v1/payments/qr_codes with:', options);
+      const t0 = Date.now();
       const response = await this.instance.qrCode.create(options);
-      console.log('[RAZORPAY] QR Code created:', response.id);
+      const tCreated = Date.now();
+      console.log(`[RAZORPAY] QR Code created: ${response.id} (${tCreated - t0} ms)`);
 
       const qrPayload = await decodeQrFromImageUrl(response.image_url);
-      console.log('[RAZORPAY] Decoded UPI payload:', qrPayload);
+      console.log(`[RAZORPAY] Decoded UPI payload in ${Date.now() - tCreated} ms`);
 
       return {
         qr_id: response.id,
