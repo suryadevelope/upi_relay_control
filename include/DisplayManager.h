@@ -291,12 +291,22 @@ public:
         activeDisplay->fillScreen(COLOR_BG);
         drawHeader("CONFIRM PAYMENT", COLOR_WHITE, COLOR_BLACK);
 
-        textCentered("AMOUNT", 0, screenWidth, 50, 2, COLOR_GRAY);
-        textFit(formatAmount(amount), 10, screenWidth - 20, 74, 5, COLOR_GREEN);
-        textFit("Relay ON for " + String(durationSec) + " seconds", 6, screenWidth - 12,
-                134, 2, COLOR_YELLOW);
+        const int cardX = 14;
+        const int cardY = HEADER_H + 8;
+        const int cardW = screenWidth - 28;
+        const int cardH = screenHeight - HEADER_H - FOOTER_H - 16;
 
-        drawFooter("LEFT:BACK", "", "ENTER:SHOW QR", COLOR_WHITE);
+        drawCard(cardX, cardY, cardW, cardH, COLOR_YELLOW);
+
+        textCentered("PAYMENT AMOUNT", cardX, cardW, cardY + 12, 2, COLOR_GRAY);
+        textFit(formatAmount(amount), cardX + 10, cardW - 20, cardY + 36, 5, COLOR_GREEN);
+
+        activeDisplay->drawFastHLine(cardX + 16, cardY + 84, cardW - 32, COLOR_DARK_GRAY);
+
+        textCentered("Power Active For " + String(durationSec) + "s", cardX, cardW, cardY + 96, 2, COLOR_YELLOW);
+        textCentered("Press ENTER to generate QR", cardX, cardW, cardY + 120, 2, COLOR_WHITE);
+
+        drawFooter("LEFT:BACK", "", "ENTER:PROCEED", COLOR_YELLOW);
     }
 
     // =========================================================================
@@ -390,17 +400,17 @@ public:
     // =========================================================================
     // QR: scannable code on the left, amount in the header, live countdown
     // =========================================================================
-    static constexpr int QR_X = 6;
+    static constexpr int QR_X = 8;
     static constexpr int QR_Y = HEADER_H + 4;
-    static constexpr int QR_SIZE = 164;
-    static constexpr int PANEL_X = 180;
+    static constexpr int QR_SIZE = 162;
+    static constexpr int PANEL_X = 178;
     static constexpr int PANEL_W = 134;
 
     void showQRScreen(const String& qrPayload, float amount, uint32_t durationSec,
                       const String& qrId, uint32_t remainingSec) {
         if (!activeDisplay) return;
         activeDisplay->fillScreen(COLOR_BG);
-        drawHeader("PAY " + formatAmount(amount), COLOR_WHITE, COLOR_BLACK);
+        drawHeader("PAY " + formatAmount(amount) + " FOR " + String(durationSec) + "s", COLOR_WHITE, COLOR_BLACK);
 
         // White QR card with black modules (highest contrast possible)
         QRCodeRenderer::renderToDisplay(activeDisplay, qrPayload, QR_X, QR_Y, QR_SIZE,
@@ -408,26 +418,33 @@ public:
 
         // Right panel: instructions, timer, provider
         drawCard(PANEL_X, QR_Y, PANEL_W, QR_SIZE, COLOR_GRAY);
-        const int tx = PANEL_X + 8;
-        text("SCAN WITH", tx, QR_Y + 8, 2, COLOR_WHITE);
-        text("ANY UPI", tx, QR_Y + 26, 2, COLOR_WHITE);
-        activeDisplay->drawFastHLine(PANEL_X + 6, QR_Y + 50, PANEL_W - 12, COLOR_DARK_GRAY);
 
-        text("TIME LEFT", tx, QR_Y + 58, 2, COLOR_YELLOW);
+        // Top badge: "SCAN & PAY"
+        activeDisplay->fillRoundRect(PANEL_X + 8, QR_Y + 8, PANEL_W - 16, 22, 4, COLOR_CYAN);
+        textCentered("SCAN & PAY", PANEL_X + 8, PANEL_W - 16, QR_Y + 12, 2, COLOR_BLACK);
+
+        // Subtitle: "GPay/PhonePe"
+        textCentered("GPay/PhonePe", PANEL_X, PANEL_W, QR_Y + 36, 2, COLOR_WHITE);
+
+        activeDisplay->drawFastHLine(PANEL_X + 8, QR_Y + 58, PANEL_W - 16, COLOR_DARK_GRAY);
+
+        // Timer section
+        textCentered("TIME LEFT", PANEL_X, PANEL_W, QR_Y + 66, 2, COLOR_YELLOW);
         updateQRCountdown(remainingSec);
 
-        text("Razorpay", tx, QR_Y + 118, 2, COLOR_GREEN);
-        text("VERIFIED", tx, QR_Y + 138, 2, COLOR_GRAY);
+        activeDisplay->drawFastHLine(PANEL_X + 8, QR_Y + 124, PANEL_W - 16, COLOR_DARK_GRAY);
 
-        drawFooter("LEFT:CANCEL", "", "WAITING", COLOR_YELLOW);
+        // Trust badge
+        textCentered("Razorpay Safe", PANEL_X, PANEL_W, QR_Y + 134, 2, COLOR_GREEN);
+
+        drawFooter("LEFT:CANCEL", "", "AWAITING PAYMENT", COLOR_YELLOW);
     }
 
     // Redraws only the timer (no flicker). Turns red in the last 30 s, orange in the last minute.
     void updateQRCountdown(uint32_t remainingSec) {
         if (!activeDisplay) return;
-        const int x = PANEL_X + 8;
-        const int y = QR_Y + 78;
-        activeDisplay->fillRect(x - 2, y - 2, PANEL_W - 12, textH(3) + 4, COLOR_BG);
+        const int y = QR_Y + 88;
+        activeDisplay->fillRect(PANEL_X + 4, y - 2, PANEL_W - 8, textH(3) + 4, COLOR_BG);
 
         uint16_t colour = COLOR_WHITE;
         if (remainingSec <= 30) colour = COLOR_RED;
@@ -436,7 +453,7 @@ public:
         char buf[8];
         snprintf(buf, sizeof(buf), "%02lu:%02lu",
                  (unsigned long)(remainingSec / 60), (unsigned long)(remainingSec % 60));
-        text(String(buf), x, y, 3, colour);
+        textCentered(String(buf), PANEL_X, PANEL_W, y, 3, colour);
     }
 
     // =========================================================================
@@ -447,10 +464,19 @@ public:
         activeDisplay->fillScreen(COLOR_BG);
         drawHeader("PAYMENT SUCCESSFUL", COLOR_EMERALD, COLOR_BLACK);
 
-        textFit("PAID " + formatAmount(amount), 6, screenWidth - 12, HEADER_H + 10, 4, COLOR_GREEN);
+        const int cardX = 14;
+        const int cardY = HEADER_H + 8;
+        const int cardW = screenWidth - 28;
+        const int cardH = screenHeight - HEADER_H - FOOTER_H - 16;
+
+        drawCard(cardX, cardY, cardW, cardH, COLOR_EMERALD);
+
+        textCentered("VERIFIED & PAID", cardX, cardW, cardY + 12, 2, COLOR_GRAY);
+        textFit(formatAmount(amount), cardX + 10, cardW - 20, cardY + 32, 4, COLOR_GREEN);
+
         updatePaymentSuccessRelayStatus(remainingRelaySec);
-        textFit("Power on for " + String(durationSec) + " seconds", 6, screenWidth - 12,
-                HEADER_H + 110, 2, COLOR_YELLOW);
+
+        textCentered("Power Active For " + String(durationSec) + "s", cardX, cardW, cardY + 124, 2, COLOR_YELLOW);
 
         drawFooter("", "RELAY ENERGIZED", "", COLOR_GREEN);
     }
@@ -458,13 +484,19 @@ public:
     // Redraws only the relay status box (no flicker)
     void updatePaymentSuccessRelayStatus(uint32_t remainingRelaySec) {
         if (!activeDisplay) return;
-        const int bx = 10, by = HEADER_H + 62, bw = screenWidth - 20, bh = 40;
+        const int cardX = 14;
+        const int cardY = HEADER_H + 8;
+        const int cardW = screenWidth - 28;
+        const int bx = cardX + 14;
+        const int by = cardY + 70;
+        const int bw = cardW - 28;
+        const int bh = 44;
 
         activeDisplay->fillRoundRect(bx, by, bw, bh, 6, COLOR_BG);
         drawCard(bx, by, bw, bh, COLOR_GREEN);
 
         String relayText = (remainingRelaySec > 0)
-                               ? "RELAY ON " + String(remainingRelaySec) + "s"
+                               ? "RELAY ON: " + String(remainingRelaySec) + "s"
                                : String("RELAY OFF");
         textFit(relayText, bx + 6, bw - 12, by + (bh - textH(3)) / 2, 3, COLOR_GREEN);
     }
@@ -477,18 +509,26 @@ public:
         activeDisplay->fillScreen(COLOR_BG);
         drawHeader("PAYMENT FAILED", COLOR_RED, COLOR_WHITE);
 
-        // Red X badge
+        const int cardX = 14;
+        const int cardY = HEADER_H + 8;
+        const int cardW = screenWidth - 28;
+        const int cardH = screenHeight - HEADER_H - FOOTER_H - 16;
+
+        drawCard(cardX, cardY, cardW, cardH, COLOR_RED);
+
         const int cx = screenWidth / 2;
-        const int cy = HEADER_H + 34;
-        activeDisplay->fillCircle(cx, cy, 22, COLOR_RED);
-        textCentered("X", cx - 20, 40, cy - 12, 3, COLOR_WHITE);
+        const int cy = cardY + 28;
+        activeDisplay->fillCircle(cx, cy, 18, COLOR_RED);
+        textCentered("X", cx - 18, 36, cy - 10, 3, COLOR_WHITE);
 
         String shown = reason.length() > 0 ? reason : String("Timeout / Expired");
         if (shown.length() > 24) shown = shown.substring(0, 24);
-        textFit(shown, 6, screenWidth - 12, HEADER_H + 66, 3, COLOR_WHITE);
+        textFit(shown, cardX + 10, cardW - 20, cardY + 58, 3, COLOR_WHITE);
 
-        textFit("No amount was charged", 6, screenWidth - 12, HEADER_H + 102, 2, COLOR_GRAY);
-        textFit("Relay stayed OFF", 6, screenWidth - 12, HEADER_H + 124, 2, COLOR_YELLOW);
+        activeDisplay->drawFastHLine(cardX + 16, cardY + 92, cardW - 32, COLOR_DARK_GRAY);
+
+        textCentered("No amount was charged", cardX, cardW, cardY + 104, 2, COLOR_GRAY);
+        textCentered("Relay remained OFF", cardX, cardW, cardY + 124, 2, COLOR_YELLOW);
 
         drawFooter("", "Returning to home...", "", COLOR_YELLOW);
     }

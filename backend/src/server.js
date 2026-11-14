@@ -92,8 +92,8 @@ app.get('/api/payment/status/:qr_id', authenticateDevice, (req, res) => {
 
     // If still pending, trigger a non-blocking asynchronous check so the HTTP response is never stalled
     if (session.status === 'pending' && !config.MOCK_MODE && sessionStore.shouldCheckRemote(session)) {
-      razorpayService.checkQRPayments(qr_id, session.amount).then(livePayment => {
-        if (livePayment && livePayment.status === 'captured') {
+      razorpayService.checkQRPayments(qr_id, session.amount, session.deviceId, session.createdAt).then(livePayment => {
+        if (livePayment && (livePayment.status === 'captured' || livePayment.status === 'authorized')) {
           console.log(`[API] Live payment verified via Razorpay API: ${livePayment.id} for session ${qr_id}`);
           sessionStore.markCaptured(qr_id, livePayment.id);
         }
@@ -317,8 +317,8 @@ async function pollPendingSessions() {
     const batch = pending.slice(0, 3);
     for (const session of batch) {
       if (sessionStore.shouldCheckRemote(session)) {
-        const livePayment = await razorpayService.checkQRPayments(session.qrId, session.amount);
-        if (livePayment && livePayment.status === 'captured') {
+        const livePayment = await razorpayService.checkQRPayments(session.qrId, session.amount, session.deviceId, session.createdAt);
+        if (livePayment && (livePayment.status === 'captured' || livePayment.status === 'authorized')) {
           console.log(`[POLLER] Fast payment detected via Razorpay API: ${livePayment.id} for session ${session.qrId}`);
           sessionStore.markCaptured(session.qrId, livePayment.id);
         }

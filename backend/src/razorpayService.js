@@ -1,7 +1,6 @@
 const https = require('https');
 const Razorpay = require('razorpay');
-const jsQR = require('jsqr');
-const { Jimp } = require('jimp');
+const QRCode = require('qrcode');
 const config = require('./config');
 
 // Keep-Alive HTTPS Agent to eliminate repeated TLS handshake latency to api.razorpay.com
@@ -73,11 +72,14 @@ class RazorpayService {
         amount,
         note: `SmartGateway ${duration}s`
       });
+
+      // Generate local offline base64 QR Data URL with qrcode npm library (zero external API dependency)
+      const mockQrDataUrl = await QRCode.toDataURL(mockUpiPayload, { width: 300, margin: 1 });
       
       return {
         qr_id: mockQrId,
         qr_payload: mockUpiPayload,
-        image_url: `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(mockUpiPayload)}`,
+        image_url: mockQrDataUrl,
         amount,
         duration
       };
@@ -106,8 +108,6 @@ class RazorpayService {
       console.log(`[RAZORPAY] QR Code created: ${response.id} (${Date.now() - t0} ms)`);
 
       // Fast deterministic UPI intent construction (verified with live Razorpay payments).
-      // Eliminates external S3 image downloading and CPU-heavy Jimp decoding,
-      // enabling 15-30 concurrent devices to generate QR codes with sub-second response times.
       const trVal = `${response.id.replace(/^qr_/, '')}qrv2`;
       const vpa = config.MERCHANT_VPA || 'funnhub151684.rzp@rxairtel';
       const name = config.MERCHANT_NAME || 'FUNNHUB';
@@ -115,10 +115,18 @@ class RazorpayService {
       const qrPayload = `upi://pay?am=${amount.toFixed(2)}&cu=INR&mc=5811&mode=22&pa=${vpa}&pn=${encodeURIComponent(name)}&tn=${encodeURIComponent(note)}&tr=${trVal}`;
       console.log(`[RAZORPAY] Fast UPI payload generated: ${qrPayload}`);
 
+      // Generate self-hosted local offline QR code image DataURL using npm qrcode library
+      let qrImageUrl = '';
+      try {
+        qrImageUrl = await QRCode.toDataURL(qrPayload, { width: 300, margin: 1 });
+      } catch (qrErr) {
+        qrImageUrl = response.image_url;
+      }
+
       return {
         qr_id: response.id,
         qr_payload: qrPayload,
-        image_url: response.image_url,
+        image_url: qrImageUrl,
         amount,
         duration
       };
@@ -128,27 +136,47 @@ class RazorpayService {
     }
   }
 
-  // Fetch payment records associated with QR Code
-  async checkQRPayments(qrId, expectedAmount) {
+  // Fetch payment records associated with QR Code or Device
+  // Solves the 15-30 second Razorpay QR indexing delay by also checking the real-time payments ledger!
+  async checkQRPayments(qrId, expectedAmount, deviceId, sessionCreatedAt) {
     if (config.MOCK_MODE) {
       return null;
     }
 
     try {
+      const expectedPaise = Math.round(expectedAmount * 100);
+
+      // 1. Direct check on QR entity
       const payments = await this.instance.qrCode.fetchAllPayments(qrId);
-      if (!payments || !payments.items || payments.items.length === 0) {
-        return null;
+      if (payments && payments.items && payments.items.length > 0) {
+        const validPayment = payments.items.find(
+          p => (p.status === 'captured' || p.status === 'authorized') && p.amount === expectedPaise
+        );
+        if (validPayment) return validPayment;
       }
 
-      const expectedPaise = Math.round(expectedAmount * 100);
-      // Find captured payment matching expected amount
-      const validPayment = payments.items.find(
-        p => p.status === 'captured' && p.amount === expectedPaise
-      );
+      // 2. Real-Time Account Ledger Check (Eliminates the 15-30s Razorpay QR indexing delay!)
+      // When a customer pays via UPI, Razorpay adds the payment to payments.all instantly (< 1s).
+      const recent = await this.instance.payments.all({ count: 10 });
+      if (recent && recent.items && recent.items.length > 0) {
+        const minTimeSec = sessionCreatedAt ? Math.floor(sessionCreatedAt / 1000) - 10 : 0;
+        const matched = recent.items.find(p => {
+          const matchDevice = deviceId ? (p.notes && p.notes.deviceId === deviceId) : true;
+          const matchAmount = p.amount === expectedPaise;
+          const matchStatus = p.status === 'captured' || p.status === 'authorized';
+          const matchTime = p.created_at >= minTimeSec;
+          return matchDevice && matchAmount && matchStatus && matchTime;
+        });
 
-      return validPayment || null;
+        if (matched) {
+          console.log(`[RAZORPAY] Instant real-time payment match in payments.all: ${matched.id} for device ${deviceId}`);
+          return matched;
+        }
+      }
+
+      return null;
     } catch (error) {
-      console.error(`[RAZORPAY] Error fetching payments for QR ${qrId}:`, error);
+      console.error(`[RAZORPAY] Error fetching payments for QR ${qrId}:`, error.message);
       return null;
     }
   }
