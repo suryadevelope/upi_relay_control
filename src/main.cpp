@@ -384,6 +384,7 @@ void finishQRRequest() {
 
 // Clears the payment session fields (does not touch the relay or the screen)
 void resetPaymentSession() {
+    paymentClient.endSession();
     activeQrId = "";
     activeQrPayload = "";
     activeAmount = 0.0f;

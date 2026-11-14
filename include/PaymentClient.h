@@ -12,13 +12,17 @@ class PaymentClient {
 private:
     String backendUrl;
     String deviceKey;
+    WiFiClient client;
+    WiFiClientSecure secureClient;
+    bool secureConfigured = false;
 
-    // Bind HTTPClient to the right transport. The caller owns both client
-    // objects so they stay alive for the whole request.
-    static bool beginRequest(HTTPClient& http, WiFiClient& client,
-                             WiFiClientSecure& secureClient, const String& endpoint) {
+    // Bind HTTPClient to the persistent transport for fast keep-alive polling
+    bool beginRequest(HTTPClient& http, const String& endpoint) {
         if (endpoint.startsWith("https://")) {
-            secureClient.setInsecure(); // For custom/embedded SSL, skip CA check
+            if (!secureConfigured) {
+                secureClient.setInsecure(); // Skip CA check for speed
+                secureConfigured = true;
+            }
             return http.begin(secureClient, endpoint);
         }
         return http.begin(client, endpoint);
@@ -26,6 +30,11 @@ private:
 
 public:
     PaymentClient() {}
+
+    void endSession() {
+        secureClient.stop();
+        client.stop();
+    }
 
     void begin(const String& url, const String& key) {
         backendUrl = url;
@@ -56,10 +65,7 @@ public:
         HTTPClient http;
         String endpoint = backendUrl + "/api/payment/create-qr";
 
-        // Clients must outlive the HTTPClient that references them
-        WiFiClient client;
-        WiFiClientSecure secureClient;
-        if (!beginRequest(http, client, secureClient, endpoint)) {
+        if (!beginRequest(http, endpoint)) {
             outError = "HTTP init failed";
             return false;
         }
@@ -137,16 +143,14 @@ public:
         HTTPClient http;
         String endpoint = backendUrl + "/api/payment/status/" + qrId;
 
-        // Clients must outlive the HTTPClient that references them
-        WiFiClient client;
-        WiFiClientSecure secureClient;
-        if (!beginRequest(http, client, secureClient, endpoint)) {
+        if (!beginRequest(http, endpoint)) {
             outError = "HTTP init failed";
             return false;
         }
 
+        http.setReuse(true);
         http.addHeader("X-Device-Key", deviceKey);
-        http.setTimeout(5000);
+        http.setTimeout(3000);
 
         int httpCode = http.GET();
         if (httpCode <= 0) {
@@ -184,13 +188,12 @@ public:
         HTTPClient http;
         String endpoint = backendUrl + "/api/payment/consume/" + qrId;
 
-        WiFiClient client;
-        WiFiClientSecure secureClient;
-        if (!beginRequest(http, client, secureClient, endpoint)) return false;
+        if (!beginRequest(http, endpoint)) return false;
 
         http.addHeader("Content-Type", "application/json");
+        http.setReuse(true);
         http.addHeader("X-Device-Key", deviceKey);
-        http.setTimeout(5000);
+        http.setTimeout(3000);
 
         JsonDocument reqDoc;
         reqDoc["paymentId"] = paymentId;

@@ -79,9 +79,9 @@ app.post('/api/payment/create-qr', authenticateDevice, async (req, res) => {
 });
 
 // ==========================================
-// 2. ESP32 API: Check Payment Verification Status
+// 2. ESP32 API: Check Payment Verification Status (Instant Non-Blocking RAM Response)
 // ==========================================
-app.get('/api/payment/status/:qr_id', authenticateDevice, async (req, res) => {
+app.get('/api/payment/status/:qr_id', authenticateDevice, (req, res) => {
   try {
     const { qr_id } = req.params;
     const session = sessionStore.getSession(qr_id);
@@ -90,15 +90,19 @@ app.get('/api/payment/status/:qr_id', authenticateDevice, async (req, res) => {
       return res.status(404).json({ success: false, error: 'Session not found or expired' });
     }
 
-    // If still pending, check directly with Razorpay API as a fallback to webhook
+    // If still pending, trigger a non-blocking asynchronous check so the HTTP response is never stalled
     if (session.status === 'pending' && !config.MOCK_MODE && sessionStore.shouldCheckRemote(session)) {
-      const livePayment = await razorpayService.checkQRPayments(qr_id, session.amount);
-      if (livePayment && livePayment.status === 'captured') {
-        console.log(`[API] Live payment verified via Razorpay API: ${livePayment.id}`);
-        sessionStore.markCaptured(qr_id, livePayment.id);
-      }
+      razorpayService.checkQRPayments(qr_id, session.amount).then(livePayment => {
+        if (livePayment && livePayment.status === 'captured') {
+          console.log(`[API] Live payment verified via Razorpay API: ${livePayment.id} for session ${qr_id}`);
+          sessionStore.markCaptured(qr_id, livePayment.id);
+        }
+      }).catch(err => {
+        console.error(`[API] Async check error for ${qr_id}:`, err.message);
+      });
     }
 
+    // Instant response from RAM (sub-millisecond latency for ESP32)
     return res.json({
       success: true,
       qr_id: session.qrId,
@@ -296,6 +300,37 @@ app.get('/api/health', (req, res) => {
     timestamp: new Date().toISOString()
   });
 });
+
+// ==========================================
+// Proactive High-Speed Payment Poller
+// Actively polls Razorpay for pending sessions so captures are detected in ~1.2s
+// without blocking any ESP32 HTTP requests
+// ==========================================
+let pollerActive = false;
+async function pollPendingSessions() {
+  if (pollerActive || config.MOCK_MODE) return;
+  const pending = sessionStore.getPendingSessions();
+  if (pending.length === 0) return;
+
+  pollerActive = true;
+  try {
+    const batch = pending.slice(0, 3);
+    for (const session of batch) {
+      if (sessionStore.shouldCheckRemote(session)) {
+        const livePayment = await razorpayService.checkQRPayments(session.qrId, session.amount);
+        if (livePayment && livePayment.status === 'captured') {
+          console.log(`[POLLER] Fast payment detected via Razorpay API: ${livePayment.id} for session ${session.qrId}`);
+          sessionStore.markCaptured(session.qrId, livePayment.id);
+        }
+      }
+    }
+  } catch (err) {
+    console.error('[POLLER] Verification error:', err.message);
+  } finally {
+    pollerActive = false;
+  }
+}
+setInterval(pollPendingSessions, 1000);
 
 // Periodic session cleanup
 setInterval(() => {

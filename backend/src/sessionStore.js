@@ -42,6 +42,22 @@ class SessionStore {
     return session;
   }
 
+  // Get all active pending sessions for proactive background verification
+  getPendingSessions() {
+    const now = Date.now();
+    const pending = [];
+    for (const session of this.sessions.values()) {
+      if (session.status === 'pending') {
+        if (now > session.expiresAt) {
+          session.status = 'expired';
+        } else {
+          pending.push(session);
+        }
+      }
+    }
+    return pending;
+  }
+
   markCaptured(qrId, paymentId) {
     const session = this.getSession(qrId);
     if (!session) return null;
