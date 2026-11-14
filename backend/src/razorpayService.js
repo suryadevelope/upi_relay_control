@@ -20,7 +20,7 @@ function buildUpiPayload({ vpa, name, amount, note }) {
 // Razorpay only returns a QR *image* URL, not the raw UPI string. Download the image
 // and decode it so the ESP32 renders the real upi:// payload (with Razorpay's VPA).
 async function decodeQrFromImageUrl(imageUrl) {
-  const res = await fetch(imageUrl, { redirect: 'follow', signal: AbortSignal.timeout(8000) });
+  const res = await fetch(imageUrl, { redirect: 'follow', signal: AbortSignal.timeout(3500) });
   if (!res.ok) {
     throw new Error(`Failed to download QR image (${res.status})`);
   }
@@ -94,8 +94,19 @@ class RazorpayService {
       const tCreated = Date.now();
       console.log(`[RAZORPAY] QR Code created: ${response.id} (${tCreated - t0} ms)`);
 
-      const qrPayload = await decodeQrFromImageUrl(response.image_url);
-      console.log(`[RAZORPAY] Decoded UPI payload in ${Date.now() - tCreated} ms`);
+      let qrPayload = '';
+      try {
+        qrPayload = await decodeQrFromImageUrl(response.image_url);
+        console.log(`[RAZORPAY] Decoded UPI payload in ${Date.now() - tCreated} ms`);
+      } catch (decodeErr) {
+        console.warn(`[RAZORPAY] Image decode warning: ${decodeErr.message}. Generating deterministic UPI intent fallback.`);
+        const trVal = `${response.id.replace(/^qr_/, '')}qrv2`;
+        const vpa = config.MERCHANT_VPA || 'funnhub151684.rzp@rxairtel';
+        const name = config.MERCHANT_NAME || 'FUNNHUB';
+        const note = `Payment To ${name}`;
+        qrPayload = `upi://pay?am=${amount.toFixed(2)}&cu=INR&mc=5811&mode=22&pa=${vpa}&pn=${encodeURIComponent(name)}&tn=${encodeURIComponent(note)}&tr=${trVal}`;
+        console.log(`[RAZORPAY] Fallback UPI payload: ${qrPayload}`);
+      }
 
       return {
         qr_id: response.id,

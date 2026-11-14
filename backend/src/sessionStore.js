@@ -88,6 +88,17 @@ class SessionStore {
     return Array.from(this.sessions.values());
   }
 
+  // Find active pending session by deviceId (used by webhooks when qrId isn't explicitly in payload)
+  findPendingSessionByDevice(deviceId) {
+    if (!deviceId) return null;
+    for (const session of this.sessions.values()) {
+      if (session.status === 'pending' && session.deviceId === deviceId) {
+        return session;
+      }
+    }
+    return null;
+  }
+
   // Periodic cleanup of sessions older than 30 mins
   cleanup() {
     const cutoff = Date.now() - 30 * 60 * 1000;

@@ -71,7 +71,7 @@ enum DisplayDriverType {
 
 // QR & Polling timeouts
 #define QR_EXPIRY_SECONDS          300      // 5 minutes
-#define STATUS_POLL_INTERVAL_MS    1000     // Poll backend every 1s (fast payment confirmation)
+#define STATUS_POLL_INTERVAL_MS    1500     // Poll backend every 1.5s (fast confirmation, optimal load for 15-30 devices)
 
 // ==========================================
 // System State Machine Definition

@@ -179,6 +179,13 @@ app.post('/api/payment/webhook', (req, res) => {
         if (!qrId && payload.payment.entity.notes && payload.payment.entity.notes.qr_id) {
           qrId = payload.payment.entity.notes.qr_id;
         }
+        // Match pending session by deviceId from notes if qrId is not directly attached
+        if (!qrId && payload.payment.entity.notes && payload.payment.entity.notes.deviceId) {
+          const matched = sessionStore.findPendingSessionByDevice(payload.payment.entity.notes.deviceId);
+          if (matched) {
+            qrId = matched.qrId;
+          }
+        }
       }
 
       if (qrId && paymentId) {

@@ -74,6 +74,16 @@ public:
         prefs.getString("backendUrl", settings.backendUrl, sizeof(settings.backendUrl));
         prefs.getString("deviceKey", settings.deviceKey, sizeof(settings.deviceKey));
 
+        // Auto-migration: if NVS stores old local IP (e.g. 10.51.153.189) or is empty, or on schema upgrade,
+        // point to the current cloud DEFAULT_BACKEND_URL
+        int cfgVer = prefs.getInt("cfg_ver", 0);
+        if (cfgVer < 2 || strstr(settings.backendUrl, "10.51.153.189") != nullptr || settings.backendUrl[0] == '\0') {
+            Serial.printf("[STORAGE] Migrating backend URL '%s' -> '%s'\n", settings.backendUrl, DEFAULT_BACKEND_URL);
+            strncpy(settings.backendUrl, DEFAULT_BACKEND_URL, sizeof(settings.backendUrl) - 1);
+            prefs.putString("backendUrl", settings.backendUrl);
+            prefs.putInt("cfg_ver", 2);
+        }
+
         settings.relayPin = prefs.getInt("relayPin", DEFAULT_RELAY_PIN);
         settings.relayActiveHigh = prefs.getBool("relayActiveHigh", DEFAULT_RELAY_ACTIVE_HIGH);
         settings.debugMode = prefs.getBool("debugMode", DEFAULT_DEBUG_MODE);
