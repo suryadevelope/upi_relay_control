@@ -47,7 +47,7 @@ enum DisplayDriverType {
 #define DEFAULT_ADMIN_PASS         "admin123"
 
 // Device identity and local network services
-#define DEFAULT_DEVICE_NAME        "Smart Gateway"
+#define DEFAULT_DEVICE_NAME        "FUNNHUB ARCADE"
 #define FIRMWARE_VERSION           "2.0.0"
 #define SETUP_HTTP_PORT            80     // Hotspot-only Wi-Fi setup page (never served on the LAN)
 #define ADMIN_API_PORT             8080   // JSON admin API for the desktop app (LAN + hotspot)

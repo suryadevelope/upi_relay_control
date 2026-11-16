@@ -137,6 +137,36 @@ app.post('/api/payment/consume/:qr_id', authenticateDevice, (req, res) => {
 });
 
 // ==========================================
+// 3b. ESP32 API: Cancel Pending Payment Session & Close on Razorpay
+// ==========================================
+app.post('/api/payment/cancel/:qr_id', authenticateDevice, (req, res) => {
+  try {
+    const { qr_id } = req.params;
+    const session = sessionStore.getSession(qr_id);
+
+    if (!session) {
+      return res.status(404).json({ success: false, error: 'Session not found' });
+    }
+
+    sessionStore.markCancelled(qr_id);
+
+    if (!config.MOCK_MODE) {
+      razorpayService.closeQRCode(qr_id).catch(err => {
+        console.error(`[API] Async QR close failed for ${qr_id}:`, err.message);
+      });
+    }
+
+    return res.json({
+      success: true,
+      message: 'Payment session cancelled and closed on Razorpay.'
+    });
+  } catch (error) {
+    console.error('[API] Cancel error:', error);
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ==========================================
 // 4. Razorpay Webhook Verification Endpoint
 // ==========================================
 app.post('/api/payment/webhook', (req, res) => {

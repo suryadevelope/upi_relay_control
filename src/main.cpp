@@ -38,6 +38,7 @@ unsigned long noticeUntil = 0;
 // QR request running on a background task, so the loading bar keeps animating
 volatile bool qrRequestBusy = false;
 volatile bool qrRequestDone = false;
+volatile bool qrRequestCancelled = false;
 bool qrReqOk = false;
 String qrReqId, qrReqPayload, qrReqError;
 float qrReqAmount = 0.0f;
@@ -54,6 +55,7 @@ unsigned long qrStartTime = 0;
 unsigned long lastPollTime = 0;
 unsigned long lastDisplayUpdate = 0;
 unsigned long errorStartTime = 0;
+unsigned long stateEnteredTime = 0;
 bool relayIsPayment = false;   // false while the admin is running a relay test
 
 int selectedRuleIndex = 0;
@@ -86,7 +88,7 @@ void setup() {
     Serial.begin(115200);
     delay(500);
     Serial.println("\n\n========================================================");
-    Serial.printf(" SMART PAYMENT GATEWAY - FIRMWARE %s\n", FIRMWARE_VERSION);
+    Serial.printf(" FUNNHUB ARCADE PAYMENT SYSTEM - FIRMWARE %s\n", FIRMWARE_VERSION);
     Serial.println("========================================================");
 
     // 1. Storage (NVS)
@@ -152,7 +154,7 @@ void loop() {
         }
     }
 
-    // 2. Menu navigation
+    // 2. Menu navigation (fully debounced multi-sample filter)
     handleButton(buttons.poll());
 
     // 2b. Background QR request: animate the loading bar and pick up the result
@@ -339,6 +341,8 @@ void showNewQRSession(const String& qrId, const String& qrPayload, float amount,
     runtime.activeDuration = activeDuration;
 
     relay.setState(STATE_QR_ACTIVE);
+    stateEnteredTime = millis();
+    buttons.clear();
     display.showQRScreen(activeQrPayload, activeAmount, activeDuration, activeQrId, QR_EXPIRY_SECONDS);
 
     Serial.printf("[MAIN] QR shown. ID=%s, Amount=Rs. %.2f, Relay=%us\n",
@@ -360,6 +364,11 @@ void qrRequestTask(void* param) {
 
 // Called from the main loop when the background request has finished
 void finishQRRequest() {
+    if (qrRequestCancelled) {
+        qrRequestCancelled = false;
+        Serial.println("[MAIN] QR response ignored because user cancelled.");
+        return;
+    }
     unsigned long waited = millis() - qrRequestStart;
     DeviceSettings& s = storage.getSettings();
 
@@ -397,19 +406,34 @@ void resetPaymentSession() {
 }
 
 void cancelActivePayment() {
+    String cancellingQrId = activeQrId;
     resetPaymentSession();
     relay.setState(STATE_READY);
     menuScreen = MENU_HOME;
+    stateEnteredTime = millis();
+    buttons.clear();
     refreshMenu();
+
+    if (cancellingQrId.length() > 0) {
+        // Fire-and-forget background task to close QR on Razorpay banking network
+        char* idCopy = strdup(cancellingQrId.c_str());
+        xTaskCreatePinnedToCore([](void* p) {
+            char* id = (char*)p;
+            String err;
+            paymentClient.cancelQRSession(String(id), err);
+            free(id);
+            vTaskDelete(nullptr);
+        }, "qr_cancel", 4096, idCopy, 1, nullptr, 0);
+    }
 }
 
 // Called when the relay timer runs out
 void onRelayFinished() {
-    Serial.printf("[RELAY] Cycle finished (%s)\n", relayIsPayment ? "payment" : "test");
+    Serial.printf("[RELAY] Cycle finished (%s). Game Over.\n", relayIsPayment ? "payment" : "test");
     relay.setState(STATE_READY);
     resetPaymentSession();
     display.updatePaymentSuccessRelayStatus(0);
-    delay(600);
+    delay(1200);
     menuScreen = MENU_HOME;
     refreshMenu();
 }
@@ -488,15 +512,31 @@ void handleButton(ButtonEvent ev) {
     GatewayState st = relay.getState();
     Serial.printf("[BUTTON] %s (state %s)\n", buttonEventName(ev), stateToString(st));
 
-    // While a QR is up, only LEFT (cancel) does anything
+    // While a QR is up, LEFT (Back) or ENTER (Select) cancels immediately
     if (st == STATE_QR_ACTIVE) {
-        if (ev == BTN_LEFT) cancelActivePayment();
+        if (ev == BTN_LEFT || ev == BTN_ENTER) {
+            Serial.println("[MAIN] Payment cancelled from QR screen by user.");
+            cancelActivePayment();
+        }
         return;
     }
+
+    // While waiting for bank / QR generation (MENU_LOADING), allow user to cancel with LEFT
+    if (menuScreen == MENU_LOADING) {
+        if (ev == BTN_LEFT) {
+            Serial.println("[MAIN] Bank connection cancelled by user.");
+            qrRequestBusy = false;
+            qrRequestCancelled = true;
+            menuScreen = MENU_HOME;
+            buttons.clear();
+            refreshMenu();
+        }
+        return;
+    }
+
     // Paying / relay running / error screen: buttons are locked
     if (st != STATE_READY) return;
     if (menuScreen == MENU_NOTICE) return;
-    if (menuScreen == MENU_LOADING) return;   // buttons locked while the QR is being made
 
     DeviceSettings& s = storage.getSettings();
 
@@ -564,7 +604,7 @@ void startSelectedPayment() {
 
     if (qrRequestBusy) return;   // one request at a time
 
-    Serial.printf("[MENU] Paying Rs. %.2f for %u s\n", amount, duration);
+    Serial.printf("[GAME] Selected Rs. %.2f for %u s play time\n", amount, duration);
 
     // Show the loading bar at once, then ask the cloud in the background
     qrReqAmount = amount;
@@ -574,6 +614,8 @@ void startSelectedPayment() {
     qrRequestStart = millis();
     lastLoadingFrame = 0;
     menuScreen = MENU_LOADING;
+    stateEnteredTime = millis();
+    buttons.clear();
     display.showLoadingScreen(amount);
 
     BaseType_t created = xTaskCreatePinnedToCore(qrRequestTask, "qr_request", 12288,

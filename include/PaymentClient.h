@@ -208,6 +208,27 @@ public:
 
         return (httpCode == 200);
     }
+
+    // Cancel QR session on backend and close it on Razorpay
+    bool cancelQRSession(const String& qrId, String& outError) {
+        if (WiFi.status() != WL_CONNECTED || qrId.length() == 0) return false;
+
+        HTTPClient http;
+        String endpoint = backendUrl + "/api/payment/cancel/" + qrId;
+
+        if (!beginRequest(http, endpoint)) {
+            outError = "HTTP init failed";
+            return false;
+        }
+
+        http.addHeader("X-Device-Key", deviceKey);
+        http.setTimeout(3000);
+
+        int httpCode = http.POST("");
+        http.end();
+
+        return (httpCode == 200);
+    }
 };
 
 #endif // PAYMENT_CLIENT_H

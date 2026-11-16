@@ -44,11 +44,11 @@ public:
         settings.tftBL = DEFAULT_TFT_BL;
         settings.tftRotation = 1; // Landscape
 
-        // Default Payment Rules: 1 Rupee for 3 Seconds by default
+        // Default Payment Rules: Game play duration
         settings.ruleCount = 3;
-        settings.rules[0] = { 1.0f, 3 };   // Rs. 1 -> 3 Seconds
-        settings.rules[1] = { 5.0f, 15 };  // Rs. 5 -> 15 Seconds
-        settings.rules[2] = { 10.0f, 30 }; // Rs. 10 -> 30 Seconds
+        settings.rules[0] = { 1.0f, 10 };  // Rs. 1 -> 10 Seconds Play
+        settings.rules[1] = { 5.0f, 60 };  // Rs. 5 -> 1 Minute Play
+        settings.rules[2] = { 10.0f, 180 }; // Rs. 10 -> 3 Minutes Play
     }
 
     void loadSettings() {
@@ -61,8 +61,9 @@ public:
         }
 
         prefs.getString("deviceName", settings.deviceName, sizeof(settings.deviceName));
-        if (settings.deviceName[0] == '\0') {
+        if (settings.deviceName[0] == '\0' || strcmp(settings.deviceName, "Smart Gateway") == 0) {
             strncpy(settings.deviceName, DEFAULT_DEVICE_NAME, sizeof(settings.deviceName) - 1);
+            prefs.putString("deviceName", settings.deviceName);
         }
         settings.serviceEnabled = prefs.getBool("svcEnabled", true);
         prefs.getString("apSSID", settings.apSSID, sizeof(settings.apSSID));
@@ -98,9 +99,9 @@ public:
         settings.ruleCount = prefs.getInt("ruleCount", 0);
         if (settings.ruleCount <= 0 || settings.ruleCount > MAX_RULES || !prefs.isKey("rules_v3")) {
             settings.ruleCount = 3;
-            settings.rules[0] = { 1.0f, 3 };
-            settings.rules[1] = { 5.0f, 15 };
-            settings.rules[2] = { 10.0f, 30 };
+            settings.rules[0] = { 1.0f, 10 };
+            settings.rules[1] = { 5.0f, 60 };
+            settings.rules[2] = { 10.0f, 180 };
             saveSettings();
             prefs.putBool("rules_v3", true);
         } else {

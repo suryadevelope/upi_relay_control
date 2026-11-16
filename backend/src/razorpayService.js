@@ -70,7 +70,7 @@ class RazorpayService {
         vpa: config.MERCHANT_VPA || 'not-configured@upi',
         name: config.MERCHANT_NAME,
         amount,
-        note: `SmartGateway ${duration}s`
+        note: `Game Play ${duration}s`
       });
 
       // Generate local offline base64 QR Data URL with qrcode npm library (zero external API dependency)
@@ -89,13 +89,13 @@ class RazorpayService {
       const amountInPaise = Math.round(amount * 100);
       const options = {
         type: 'upi_qr',
-        name: 'Smart Gateway',
+        name: 'FUNNHUB ARCADE',
         usage: 'single_use',
         fixed_amount: true,
         payment_amount: amountInPaise,
         // Close on Razorpay's side too, so a stale QR can't be paid after the session expires
         close_by: Math.floor(Date.now() / 1000) + config.QR_EXPIRY_SEC,
-        description: description || `Access for ${duration}s`,
+        description: description || `Game Play for ${duration}s`,
         notes: {
           deviceId: deviceId || 'esp32',
           duration: String(duration)
@@ -178,6 +178,23 @@ class RazorpayService {
     } catch (error) {
       console.error(`[RAZORPAY] Error fetching payments for QR ${qrId}:`, error.message);
       return null;
+    }
+  }
+
+  // Close / invalidate QR code on Razorpay servers so no late payment can be accepted
+  async closeQRCode(qrId) {
+    if (config.MOCK_MODE || !qrId || qrId.startsWith('qr_mock_')) {
+      return true;
+    }
+
+    try {
+      console.log(`[RAZORPAY] Closing QR code ${qrId} on Razorpay...`);
+      const response = await this.instance.qrCode.close(qrId);
+      console.log(`[RAZORPAY] QR code ${qrId} closed successfully (status: ${response.status})`);
+      return true;
+    } catch (error) {
+      console.error(`[RAZORPAY] Error closing QR code ${qrId}:`, error.message);
+      return false;
     }
   }
 }

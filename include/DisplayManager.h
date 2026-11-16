@@ -11,8 +11,8 @@
 #endif
 
 // ----------------------------------------------------------------------------
-// Outdoor (direct sunlight) palette: pure black background, white / yellow /
-// bright green text, bright colour bands. No low-contrast slate panels.
+// High-contrast outdoor & arcade palette: pure black background, white / yellow /
+// bright green / cyan text, crisp cards with zero text collisions.
 // ----------------------------------------------------------------------------
 #define COLOR_BG          0x0000  // Black background
 #define COLOR_PANEL       0x0000  // Cards are outlined in colour, not filled
@@ -25,12 +25,12 @@
 #define COLOR_CYAN        0x07FF
 #define COLOR_YELLOW      0xFFE0
 #define COLOR_ORANGE      0xFD20
-#define COLOR_GRAY        0xC618  // Light grey, still readable in sun
-#define COLOR_DARK_GRAY   0x7BEF  // Mid grey, used only for dividers
+#define COLOR_GRAY        0xC618  // Light grey, readable in bright light
+#define COLOR_DARK_GRAY   0x7BEF  // Mid grey, used for dividers
 
-// Text sizes (built-in 6x8 font scaled by size): size 2 = 12x16 px,
+// Text sizes (built-in font scaled by size): size 2 = 12x16 px,
 // size 3 = 18x24 px, size 4 = 24x32 px, size 5 = 30x40 px.
-// No text is drawn smaller than size 2.
+// Minimum text size is 2 (12x16 px) for readability.
 
 class DisplayManager {
 private:
@@ -51,7 +51,6 @@ private:
     // ------------------------------------------------------------------------
     // Text and layout helpers
     // ------------------------------------------------------------------------
-    // Built-in font: 6 px per character cell, 8 px tall, scaled by size.
     static int textW(const String& s, uint8_t size) {
         return (int)s.length() * 6 * size;
     }
@@ -63,6 +62,13 @@ private:
             return "Rs." + String(whole);
         }
         return "Rs." + String(amount, 2);
+    }
+
+    String formatDuration(uint32_t sec) const {
+        if (sec >= 60 && (sec % 60 == 0)) {
+            return String(sec / 60) + " MIN";
+        }
+        return String(sec) + "s";
     }
 
     void text(const String& s, int x, int y, uint8_t size, uint16_t fg) {
@@ -96,7 +102,7 @@ private:
         return out;
     }
 
-    // Two-pixel outline, so the card edge stays visible in bright light
+    // Two-pixel outline, card edge stays crisp in bright light
     void drawCard(int x, int y, int w, int h, uint16_t colour) {
         activeDisplay->drawRoundRect(x, y, w, h, 6, colour);
         activeDisplay->drawRoundRect(x + 1, y + 1, w - 2, h - 2, 5, colour);
@@ -147,14 +153,12 @@ private:
 public:
     DisplayManager() {}
 
-    // Pins, driver and rotation are fixed by the TFT_* build flags in platformio.ini,
-    // so the tftCS/tftDC/tftRST settings are informational only. TFT_eSPI owns the SPI bus.
     void begin(const DeviceSettings& settings) {
         rotation = settings.tftRotation;
         blPin = settings.tftBL;
 
         if (blPin >= 0) {
-            ledcSetup(BL_CHANNEL, 5000, 8);      // 5 kHz, 8-bit PWM: flicker-free
+            ledcSetup(BL_CHANNEL, 5000, 8);      // 5 kHz, 8-bit PWM
             ledcAttachPin(blPin, BL_CHANNEL);
             writeBacklight(brightness);
         }
@@ -172,7 +176,6 @@ public:
                       screenWidth, screenHeight, rotation, brightness);
     }
 
-    // 0..255. Full brightness is the default; lower it indoors if the screen is too bright.
     void setBrightness(uint8_t level) {
         brightness = level;
         writeBacklight(level);
@@ -181,7 +184,7 @@ public:
     uint8_t getBrightness() const { return brightness; }
 
     // =========================================================================
-    // HOME MENU: amount cards, UP / DOWN select, ENTER pays, RIGHT shows info
+    // 1. HOME SCREEN: Arcade game pass selection (UP / DOWN select, ENTER plays)
     // =========================================================================
     void showMenuHome(const String& deviceName, bool serviceEnabled, bool staConnected,
                       const String& staIP, int ruleCount, const PaymentRule* rules,
@@ -189,50 +192,47 @@ public:
         if (!activeDisplay) return;
         const int w = screenWidth;
 
-        // ---- Header: name left, Wi-Fi and service pills right ----
+        // ---- Header: Arcade Title left, Wi-Fi and service status right ----
         activeDisplay->fillRect(0, 0, w, HEADER_H, COLOR_WHITE);
 
-        const int pillH = 24;
+        const int pillH = 22;
         const int pillY = (HEADER_H - pillH) / 2;
 
         const String svc = serviceEnabled ? "ON" : "STOP";
-        const int svcW = textW(svc, 2) + 16;
+        const int svcW = textW(svc, 2) + 14;
         const int svcX = w - 6 - svcW;
-        activeDisplay->fillRoundRect(svcX, pillY, svcW, pillH, 5,
+        activeDisplay->fillRoundRect(svcX, pillY, svcW, pillH, 4,
                                      serviceEnabled ? COLOR_GREEN : COLOR_RED);
-        textCentered(svc, svcX, svcW, pillY + 4, 2, serviceEnabled ? COLOR_BLACK : COLOR_WHITE);
+        textCentered(svc, svcX, svcW, pillY + 3, 2, serviceEnabled ? COLOR_BLACK : COLOR_WHITE);
 
         const String net = staConnected ? "WIFI" : "OFF";
-        const int netW = textW(net, 2) + 16;
+        const int netW = textW(net, 2) + 14;
         const int netX = svcX - 6 - netW;
-        activeDisplay->fillRoundRect(netX, pillY, netW, pillH, 5,
+        activeDisplay->fillRoundRect(netX, pillY, netW, pillH, 4,
                                      staConnected ? COLOR_GREEN : COLOR_RED);
-        textCentered(net, netX, netW, pillY + 4, 2, staConnected ? COLOR_BLACK : COLOR_WHITE);
+        textCentered(net, netX, netW, pillY + 3, 2, staConnected ? COLOR_BLACK : COLOR_WHITE);
 
         const int titleMax = netX - 6 - 8;
         const uint8_t titleSize = fitSize(deviceName, titleMax, 3);
         text(truncateToWidth(deviceName, titleMax, titleSize), 8,
              (HEADER_H - textH(titleSize)) / 2, titleSize, COLOR_BLACK);
 
-        // ---- Body: 3 large amount cards (scrolls for more) ----
+        // ---- Body: 3 arcade play cards ----
         clearBody();
-        const int bodyTop = HEADER_H + 4;
-        const int bodyBottom = screenHeight - FOOTER_H - 4;
-        const int rowH = 50;
+        const int bodyTop = HEADER_H + 6;
+        const int rowH = 46;
         const int rowGap = 6;
-        const int listX = 6;
-        const int listW = w - 6 - 22;             // right 22 px is the scroll gutter
-        int maxRows = (bodyBottom - bodyTop + rowGap) / (rowH + rowGap);
-        if (maxRows < 1) maxRows = 1;
+        const int listX = 10;
+        const int listW = (ruleCount > 3) ? (w - 20 - 18) : (w - 20);
+        int maxRows = 3;
 
         if (ruleCount <= 0 || rules == nullptr) {
-            textFit("NO CARDS", 6, w - 12, bodyTop + 24, 4, COLOR_YELLOW);
-            textFit("Add cards in admin app", 6, w - 12, bodyTop + 88, 2, COLOR_GRAY);
+            textFit("NO GAME CARDS", 6, w - 12, bodyTop + 24, 4, COLOR_YELLOW);
+            textFit("Configure cards in admin app", 6, w - 12, bodyTop + 88, 2, COLOR_GRAY);
         } else {
             if (selectedIndex < 0) selectedIndex = 0;
             if (selectedIndex >= ruleCount) selectedIndex = ruleCount - 1;
 
-            // Keep the selected card near the middle of the visible window
             int first = selectedIndex - maxRows / 2;
             if (first > ruleCount - maxRows) first = ruleCount - maxRows;
             if (first < 0) first = 0;
@@ -243,53 +243,54 @@ public:
                 const bool sel = (idx == selectedIndex);
 
                 if (sel) {
-                    // Selected: solid yellow card with black text (reads best in sun)
                     activeDisplay->fillRoundRect(listX, y, listW, rowH, 6, COLOR_YELLOW);
                 } else {
                     activeDisplay->fillRoundRect(listX, y, listW, rowH, 6, COLOR_BG);
-                    drawCard(listX, y, listW, rowH, COLOR_GRAY);
+                    drawCard(listX, y, listW, rowH, COLOR_DARK_GRAY);
                 }
 
-                const String dur = String(rules[idx].durationSec) + "s";
+                const String dur = "PLAY " + formatDuration(rules[idx].durationSec);
                 const int durW = textW(dur, 2);
                 const String amount = formatAmount(rules[idx].amount);
-                const int amountMax = listW - 24 - durW - 12;
+                const int amountMax = listW - 28 - durW - 12;
                 const uint8_t amountSize = fitSize(amount, amountMax, 4);
                 const uint16_t ink = sel ? COLOR_BLACK : COLOR_WHITE;
 
-                text(amount, listX + 12, y + (rowH - textH(amountSize)) / 2, amountSize, ink);
-                text(dur, listX + listW - 12 - durW, y + (rowH - textH(2)) / 2, 2,
+                text(amount, listX + 14, y + (rowH - textH(amountSize)) / 2, amountSize, ink);
+                text(dur, listX + listW - 14 - durW, y + (rowH - textH(2)) / 2, 2,
                      sel ? COLOR_BLACK : COLOR_YELLOW);
             }
 
-            // Scroll markers in the gutter: more cards above / below the window
-            const int gx = w - 11;
-            if (first > 0) {
-                activeDisplay->fillTriangle(gx - 6, bodyTop + 10, gx + 6, bodyTop + 10,
-                                            gx, bodyTop + 2, COLOR_YELLOW);
-            }
-            if (first + maxRows < ruleCount) {
-                const int by = bodyBottom - 2;
-                activeDisplay->fillTriangle(gx - 6, by - 10, gx + 6, by - 10,
-                                            gx, by, COLOR_YELLOW);
+            // Scroll arrows in gutter when ruleCount > 3
+            if (ruleCount > 3) {
+                const int gx = w - 10;
+                if (first > 0) {
+                    activeDisplay->fillTriangle(gx - 5, bodyTop + 10, gx + 5, bodyTop + 10,
+                                                gx, bodyTop + 2, COLOR_YELLOW);
+                }
+                if (first + maxRows < ruleCount) {
+                    const int by = bodyTop + maxRows * (rowH + rowGap) - rowGap;
+                    activeDisplay->fillTriangle(gx - 5, by - 10, gx + 5, by - 10,
+                                                gx, by - 2, COLOR_YELLOW);
+                }
             }
         }
 
-        // ---- Footer: the three keys ----
+        // ---- Footer ----
         if (serviceEnabled) {
-            drawFooter("UP/DN", "ENTER:PAY", "RIGHT:INFO", COLOR_GREEN);
+            drawFooter("UP/DN", "ENTER:PLAY", "INFO", COLOR_GREEN);
         } else {
-            drawFooter("UP/DN", "PAY OFF", "RIGHT:INFO", COLOR_RED);
+            drawFooter("UP/DN", "PAY OFF", "INFO", COLOR_RED);
         }
     }
 
     // =========================================================================
-    // CONFIRM: big amount, shown before the QR is generated
+    // 2. CONFIRM SCREEN: Shown before QR generation
     // =========================================================================
     void showConfirmScreen(float amount, uint32_t durationSec) {
         if (!activeDisplay) return;
         activeDisplay->fillScreen(COLOR_BG);
-        drawHeader("CONFIRM PAYMENT", COLOR_WHITE, COLOR_BLACK);
+        drawHeader("START GAME", COLOR_WHITE, COLOR_BLACK);
 
         const int cardX = 14;
         const int cardY = HEADER_H + 8;
@@ -298,152 +299,128 @@ public:
 
         drawCard(cardX, cardY, cardW, cardH, COLOR_YELLOW);
 
-        textCentered("PAYMENT AMOUNT", cardX, cardW, cardY + 12, 2, COLOR_GRAY);
-        textFit(formatAmount(amount), cardX + 10, cardW - 20, cardY + 36, 5, COLOR_GREEN);
+        textCentered("GAME TICKET", cardX, cardW, cardY + 12, 2, COLOR_GRAY);
+        textFit(formatAmount(amount), cardX + 10, cardW - 20, cardY + 30, 4, COLOR_GREEN);
 
-        activeDisplay->drawFastHLine(cardX + 16, cardY + 84, cardW - 32, COLOR_DARK_GRAY);
+        activeDisplay->drawFastHLine(cardX + 16, cardY + 74, cardW - 32, COLOR_DARK_GRAY);
 
-        textCentered("Power Active For " + String(durationSec) + "s", cardX, cardW, cardY + 96, 2, COLOR_YELLOW);
-        textCentered("Press ENTER to generate QR", cardX, cardW, cardY + 120, 2, COLOR_WHITE);
+        textCentered("GAME TIME: " + formatDuration(durationSec), cardX, cardW, cardY + 86, 2, COLOR_YELLOW);
+        textCentered("PRESS ENTER TO PLAY", cardX, cardW, cardY + 114, 2, COLOR_WHITE);
 
-        drawFooter("LEFT:BACK", "", "ENTER:PROCEED", COLOR_YELLOW);
+        drawFooter("LEFT:BACK", "", "ENTER:PAY", COLOR_YELLOW);
     }
 
     // =========================================================================
-    // INFO: device identity and live status (RIGHT from home)
+    // 3. LOADING SCREEN: Contacting backend to generate UPI QR
     // =========================================================================
-    void showInfoScreen(const String& deviceName, const String& fwVersion, const String& apSSID,
-                        bool staConnected, const String& staIP, bool serviceEnabled, bool relayOn) {
-        if (!activeDisplay) return;
-        activeDisplay->fillScreen(COLOR_BG);
-        drawHeader("DEVICE INFO", COLOR_WHITE, COLOR_BLACK);
+    static constexpr int LOAD_CARD_X = 14;
+    static constexpr int LOAD_CARD_Y = HEADER_H + 8; // 48
+    static constexpr int LOAD_CARD_W = 292;
+    static constexpr int LOAD_CARD_H = 154; // bottom = 202
 
-        int y = HEADER_H + 8;
-        const int step = 28;
-        const int valueX = 112;   // clears the widest label ("Firmware" = 96 px)
-        const int valueMax = screenWidth - valueX - 6;
-        auto row = [&](const char* label, const String& value, uint16_t colour) {
-            text(label, 8, y, 2, COLOR_GRAY);
-            text(truncateToWidth(value, valueMax, 2), valueX, y, 2, colour);
-            y += step;
-        };
-
-        row("Name", deviceName, COLOR_WHITE);
-        row("Firmware", fwVersion, COLOR_WHITE);
-        row("Wi-Fi", (staConnected && staIP.length() > 0) ? staIP : String("offline"),
-            staConnected ? COLOR_GREEN : COLOR_RED);
-        row("Hotspot", apSSID, COLOR_CYAN);
-        row("Service", serviceEnabled ? String("ENABLED") : String("STOPPED"),
-            serviceEnabled ? COLOR_GREEN : COLOR_RED);
-        row("Relay", relayOn ? String("ON") : String("OFF"), relayOn ? COLOR_YELLOW : COLOR_GRAY);
-
-        drawFooter("LEFT:BACK", "", "", COLOR_WHITE);
-    }
-
-    // =========================================================================
-    // NOTICE: full-screen message that closes itself
-    // =========================================================================
-    void showNoticeScreen(const String& title, const String& message, uint16_t colour) {
-        if (!activeDisplay) return;
-        activeDisplay->fillScreen(COLOR_BG);
-        const uint16_t ink = (colour == COLOR_RED) ? COLOR_WHITE : COLOR_BLACK;
-        drawHeader(title, colour, ink);
-        textFit(message, 8, screenWidth - 16, HEADER_H + (screenHeight - HEADER_H) / 2 - 16,
-                3, COLOR_WHITE);
-    }
-
-    // =========================================================================
-    // LOADING: shown from ENTER until the cloud returns the QR (bar keeps moving)
-    // =========================================================================
-    static constexpr int LOAD_BAR_X = 20;
-    static constexpr int LOAD_BAR_Y = 92;
-    static constexpr int LOAD_BAR_H = 36;
+    static constexpr int LOAD_BAR_X = 36;
+    static constexpr int LOAD_BAR_Y = 138;
+    static constexpr int LOAD_BAR_W = 248;
+    static constexpr int LOAD_BAR_H = 20;
 
     void showLoadingScreen(float amount) {
         if (!activeDisplay) return;
         activeDisplay->fillScreen(COLOR_BG);
-        drawHeader("PREPARING QR", COLOR_WHITE, COLOR_BLACK);
+        drawHeader("CONNECTING TO BANK...", COLOR_WHITE, COLOR_BLACK);
 
-        textFit(formatAmount(amount), 6, screenWidth - 12, HEADER_H + 8, 4, COLOR_GREEN);
-        textCentered("Contacting bank...", 0, screenWidth, LOAD_BAR_Y - 30, 2, COLOR_YELLOW);
+        drawCard(LOAD_CARD_X, LOAD_CARD_Y, LOAD_CARD_W, LOAD_CARD_H, COLOR_YELLOW);
 
-        const int bw = screenWidth - 2 * LOAD_BAR_X;
-        drawCard(LOAD_BAR_X, LOAD_BAR_Y, bw, LOAD_BAR_H, COLOR_WHITE);
+        // Row 1: Label (y = 60..76)
+        textCentered("GAME PASS TICKET", LOAD_CARD_X, LOAD_CARD_W, LOAD_CARD_Y + 12, 2, COLOR_GRAY);
+
+        // Row 2: Amount (y = 80..104)
+        textFit(formatAmount(amount), LOAD_CARD_X + 10, LOAD_CARD_W - 20, LOAD_CARD_Y + 32, 3, COLOR_GREEN);
+
+        // Row 3: Divider line (y = 108)
+        activeDisplay->drawFastHLine(LOAD_CARD_X + 16, LOAD_CARD_Y + 60, LOAD_CARD_W - 32, COLOR_DARK_GRAY);
+
+        // Row 4: Status text (y = 116..132, 19 chars = 228px, centered in 292px)
+        textCentered("Creating Game QR...", LOAD_CARD_X, LOAD_CARD_W, LOAD_CARD_Y + 68, 2, COLOR_YELLOW);
+
+        // Row 5: Progress bar outline (y = 138..158)
+        drawCard(LOAD_BAR_X, LOAD_BAR_Y, LOAD_BAR_W, LOAD_BAR_H, COLOR_WHITE);
         updateLoadingBar(0);
+
+        // Footer: (y = 210..240)
+        drawFooter("LEFT:CANCEL", "", "", COLOR_YELLOW);
     }
 
-    // Moves the sliding block and the elapsed counter. Called every ~50 ms.
     void updateLoadingBar(uint32_t elapsedMs) {
         if (!activeDisplay) return;
-        const int bw = screenWidth - 2 * LOAD_BAR_X;
-        const int inX = LOAD_BAR_X + 4;
-        const int inW = bw - 8;
-        const int inY = LOAD_BAR_Y + 4;
-        const int inH = LOAD_BAR_H - 8;
-        const int block = 70;
+        const int inX = LOAD_BAR_X + 3;
+        const int inW = LOAD_BAR_W - 6;
+        const int inY = LOAD_BAR_Y + 3;
+        const int inH = LOAD_BAR_H - 6;
+        const int block = 60;
         const int travel = inW - block;
         const int period = 2 * travel;
 
-        // Clear the bar interior, then draw the block bouncing left and right
         activeDisplay->fillRect(inX, inY, inW, inH, COLOR_BG);
         int phase = (int)((elapsedMs / 5) % (uint32_t)period);
         int x = (phase <= travel) ? phase : (period - phase);
         activeDisplay->fillRect(inX + x, inY, block, inH, COLOR_YELLOW);
 
-        // Elapsed seconds under the bar
-        char buf[24];
-        snprintf(buf, sizeof(buf), "Please wait  %lus", (unsigned long)(elapsedMs / 1000));
-        activeDisplay->fillRect(0, LOAD_BAR_Y + LOAD_BAR_H + 10, screenWidth, 20, COLOR_BG);
-        textCentered(String(buf), 0, screenWidth, LOAD_BAR_Y + LOAD_BAR_H + 12, 2, COLOR_GRAY);
+        // Row 6: Elapsed seconds under progress bar (y = 166..182)
+        char buf[32];
+        snprintf(buf, sizeof(buf), "Please wait...  %lus", (unsigned long)(elapsedMs / 1000));
+        activeDisplay->fillRect(LOAD_CARD_X + 20, LOAD_BAR_Y + LOAD_BAR_H + 8, LOAD_CARD_W - 40, 18, COLOR_BG);
+        textCentered(String(buf), LOAD_CARD_X, LOAD_CARD_W, LOAD_BAR_Y + LOAD_BAR_H + 8, 2, COLOR_GRAY);
     }
 
     // =========================================================================
-    // QR: scannable code on the left, amount in the header, live countdown
+    // 4. QR SCREEN: High-contrast QR code with timer and game badges
     // =========================================================================
     static constexpr int QR_X = 8;
-    static constexpr int QR_Y = HEADER_H + 4;
-    static constexpr int QR_SIZE = 162;
-    static constexpr int PANEL_X = 178;
-    static constexpr int PANEL_W = 134;
+    static constexpr int QR_Y = HEADER_H + 4; // 44
+    static constexpr int QR_SIZE = 158;
+    static constexpr int PANEL_X = 174;
+    static constexpr int PANEL_W = 138;
 
     void showQRScreen(const String& qrPayload, float amount, uint32_t durationSec,
                       const String& qrId, uint32_t remainingSec) {
         if (!activeDisplay) return;
         activeDisplay->fillScreen(COLOR_BG);
-        drawHeader("PAY " + formatAmount(amount) + " FOR " + String(durationSec) + "s", COLOR_WHITE, COLOR_BLACK);
+        drawHeader("SCAN TO PLAY: " + formatAmount(amount), COLOR_WHITE, COLOR_BLACK);
 
-        // White QR card with black modules (highest contrast possible)
+        // White background card with black QR modules for optimal camera scanning
         QRCodeRenderer::renderToDisplay(activeDisplay, qrPayload, QR_X, QR_Y, QR_SIZE,
                                         COLOR_BLACK, COLOR_WHITE);
 
-        // Right panel: instructions, timer, provider
+        // Right panel outline
         drawCard(PANEL_X, QR_Y, PANEL_W, QR_SIZE, COLOR_GRAY);
 
-        // Top badge: "SCAN & PAY"
-        activeDisplay->fillRoundRect(PANEL_X + 8, QR_Y + 8, PANEL_W - 16, 22, 4, COLOR_CYAN);
-        textCentered("SCAN & PAY", PANEL_X + 8, PANEL_W - 16, QR_Y + 12, 2, COLOR_BLACK);
+        // 1. Top badge: "PLAY GAME"
+        activeDisplay->fillRoundRect(PANEL_X + 6, QR_Y + 6, PANEL_W - 12, 22, 4, COLOR_YELLOW);
+        textCentered("PLAY GAME", PANEL_X + 6, PANEL_W - 12, QR_Y + 9, 2, COLOR_BLACK);
 
-        // Subtitle: "GPay/PhonePe"
-        textCentered("GPay/PhonePe", PANEL_X, PANEL_W, QR_Y + 36, 2, COLOR_WHITE);
+        // 2. Subtitle: "ANY UPI APP"
+        textCentered("ANY UPI APP", PANEL_X, PANEL_W, QR_Y + 32, 2, COLOR_WHITE);
 
-        activeDisplay->drawFastHLine(PANEL_X + 8, QR_Y + 58, PANEL_W - 16, COLOR_DARK_GRAY);
+        // 3. Divider
+        activeDisplay->drawFastHLine(PANEL_X + 8, QR_Y + 52, PANEL_W - 16, COLOR_DARK_GRAY);
 
-        // Timer section
-        textCentered("TIME LEFT", PANEL_X, PANEL_W, QR_Y + 66, 2, COLOR_YELLOW);
+        // 4. Timer section
+        textCentered("TIME LEFT", PANEL_X, PANEL_W, QR_Y + 58, 2, COLOR_YELLOW);
         updateQRCountdown(remainingSec);
 
-        activeDisplay->drawFastHLine(PANEL_X + 8, QR_Y + 124, PANEL_W - 16, COLOR_DARK_GRAY);
+        // 5. Divider
+        activeDisplay->drawFastHLine(PANEL_X + 8, QR_Y + 110, PANEL_W - 16, COLOR_DARK_GRAY);
 
-        // Trust badge
-        textCentered("Razorpay Safe", PANEL_X, PANEL_W, QR_Y + 134, 2, COLOR_GREEN);
+        // 6. Game time and auto start badge
+        textCentered("TIME: " + formatDuration(durationSec), PANEL_X, PANEL_W, QR_Y + 116, 2, COLOR_GREEN);
+        textCentered("AUTO START", PANEL_X, PANEL_W, QR_Y + 134, 2, COLOR_CYAN);
 
-        drawFooter("LEFT:CANCEL", "", "AWAITING PAYMENT", COLOR_YELLOW);
+        drawFooter("LEFT:CANCEL", "", "ENTER:CANCEL", COLOR_YELLOW);
     }
 
-    // Redraws only the timer (no flicker). Turns red in the last 30 s, orange in the last minute.
     void updateQRCountdown(uint32_t remainingSec) {
         if (!activeDisplay) return;
-        const int y = QR_Y + 88;
+        const int y = QR_Y + 80;
         activeDisplay->fillRect(PANEL_X + 4, y - 2, PANEL_W - 8, textH(3) + 4, COLOR_BG);
 
         uint16_t colour = COLOR_WHITE;
@@ -457,12 +434,12 @@ public:
     }
 
     // =========================================================================
-    // PAYMENT SUCCESS: amount, live relay countdown
+    // 5. PAYMENT SUCCESS SCREEN: Game active, relay energized, countdown to 0
     // =========================================================================
     void showPaymentSuccessScreen(float amount, uint32_t durationSec, uint32_t remainingRelaySec = 3) {
         if (!activeDisplay) return;
         activeDisplay->fillScreen(COLOR_BG);
-        drawHeader("PAYMENT SUCCESSFUL", COLOR_EMERALD, COLOR_BLACK);
+        drawHeader("GAME STARTED! HAVE FUN", COLOR_EMERALD, COLOR_BLACK);
 
         const int cardX = 14;
         const int cardY = HEADER_H + 8;
@@ -471,43 +448,46 @@ public:
 
         drawCard(cardX, cardY, cardW, cardH, COLOR_EMERALD);
 
-        textCentered("VERIFIED & PAID", cardX, cardW, cardY + 12, 2, COLOR_GRAY);
-        textFit(formatAmount(amount), cardX + 10, cardW - 20, cardY + 32, 4, COLOR_GREEN);
+        textCentered("PAYMENT VERIFIED", cardX, cardW, cardY + 10, 2, COLOR_WHITE);
+        textFit(formatAmount(amount) + " COIN INSERTED", cardX + 10, cardW - 20, cardY + 30, 3, COLOR_YELLOW);
 
         updatePaymentSuccessRelayStatus(remainingRelaySec);
 
-        textCentered("Power Active For " + String(durationSec) + "s", cardX, cardW, cardY + 124, 2, COLOR_YELLOW);
+        textCentered("PLAY TIME: " + formatDuration(durationSec), cardX, cardW, cardY + 110, 2, COLOR_WHITE);
+        textCentered("CONTROLS ENERGIZED", cardX, cardW, cardY + 130, 2, COLOR_YELLOW);
 
-        drawFooter("", "RELAY ENERGIZED", "", COLOR_GREEN);
+        drawFooter("FUNNHUB", "GAME ACTIVE", "PLAY ON!", COLOR_GREEN);
     }
 
-    // Redraws only the relay status box (no flicker)
     void updatePaymentSuccessRelayStatus(uint32_t remainingRelaySec) {
         if (!activeDisplay) return;
         const int cardX = 14;
         const int cardY = HEADER_H + 8;
         const int cardW = screenWidth - 28;
-        const int bx = cardX + 14;
-        const int by = cardY + 70;
-        const int bw = cardW - 28;
-        const int bh = 44;
+        const int bx = cardX + 16;
+        const int by = cardY + 56;
+        const int bw = cardW - 32;
+        const int bh = 46;
 
         activeDisplay->fillRoundRect(bx, by, bw, bh, 6, COLOR_BG);
-        drawCard(bx, by, bw, bh, COLOR_GREEN);
 
-        String relayText = (remainingRelaySec > 0)
-                               ? "RELAY ON: " + String(remainingRelaySec) + "s"
-                               : String("RELAY OFF");
-        textFit(relayText, bx + 6, bw - 12, by + (bh - textH(3)) / 2, 3, COLOR_GREEN);
+        if (remainingRelaySec > 0) {
+            drawCard(bx, by, bw, bh, COLOR_GREEN);
+            String playText = "GAME ON: " + String(remainingRelaySec) + "s";
+            textFit(playText, bx + 6, bw - 12, by + (bh - textH(3)) / 2, 3, COLOR_GREEN);
+        } else {
+            drawCard(bx, by, bw, bh, COLOR_RED);
+            textFit("GAME OVER", bx + 6, bw - 12, by + (bh - textH(3)) / 2, 3, COLOR_RED);
+        }
     }
 
     // =========================================================================
-    // PAYMENT FAILED
+    // 6. PAYMENT FAILED / CANCELLED SCREEN
     // =========================================================================
     void showPaymentFailedScreen(const String& reason = "Payment Expired") {
         if (!activeDisplay) return;
         activeDisplay->fillScreen(COLOR_BG);
-        drawHeader("PAYMENT FAILED", COLOR_RED, COLOR_WHITE);
+        drawHeader("GAME CANCELLED", COLOR_RED, COLOR_WHITE);
 
         const int cardX = 14;
         const int cardY = HEADER_H + 8;
@@ -517,20 +497,71 @@ public:
         drawCard(cardX, cardY, cardW, cardH, COLOR_RED);
 
         const int cx = screenWidth / 2;
-        const int cy = cardY + 28;
-        activeDisplay->fillCircle(cx, cy, 18, COLOR_RED);
-        textCentered("X", cx - 18, 36, cy - 10, 3, COLOR_WHITE);
+        const int cy = cardY + 24;
+        activeDisplay->fillCircle(cx, cy, 16, COLOR_RED);
+        textCentered("X", cx - 16, 32, cy - 8, 2, COLOR_WHITE);
 
-        String shown = reason.length() > 0 ? reason : String("Timeout / Expired");
-        if (shown.length() > 24) shown = shown.substring(0, 24);
-        textFit(shown, cardX + 10, cardW - 20, cardY + 58, 3, COLOR_WHITE);
+        String shown = reason.length() > 0 ? reason : String("Timeout / Cancelled");
+        if (shown.length() > 22) shown = shown.substring(0, 22);
+        textFit(shown, cardX + 10, cardW - 20, cardY + 48, 3, COLOR_WHITE);
 
-        activeDisplay->drawFastHLine(cardX + 16, cardY + 92, cardW - 32, COLOR_DARK_GRAY);
+        activeDisplay->drawFastHLine(cardX + 16, cardY + 78, cardW - 32, COLOR_DARK_GRAY);
 
-        textCentered("No amount was charged", cardX, cardW, cardY + 104, 2, COLOR_GRAY);
-        textCentered("Relay remained OFF", cardX, cardW, cardY + 124, 2, COLOR_YELLOW);
+        textCentered("No money was charged", cardX, cardW, cardY + 90, 2, COLOR_GRAY);
+        textCentered("Game relay remained OFF", cardX, cardW, cardY + 114, 2, COLOR_YELLOW);
 
-        drawFooter("", "Returning to home...", "", COLOR_YELLOW);
+        drawFooter("", "RETURNING TO MENU...", "", COLOR_YELLOW);
+    }
+
+    // =========================================================================
+    // 7. INFO SCREEN: Machine status and identity
+    // =========================================================================
+    void showInfoScreen(const String& deviceName, const String& fwVersion, const String& apSSID,
+                        bool staConnected, const String& staIP, bool serviceEnabled, bool relayOn) {
+        if (!activeDisplay) return;
+        activeDisplay->fillScreen(COLOR_BG);
+        drawHeader("ARCADE MACHINE INFO", COLOR_WHITE, COLOR_BLACK);
+
+        int y = HEADER_H + 10;
+        const int step = 25;
+        const int valueX = 110;
+        const int valueMax = screenWidth - valueX - 8;
+        auto row = [&](const char* label, const String& value, uint16_t colour) {
+            text(label, 10, y, 2, COLOR_GRAY);
+            text(truncateToWidth(value, valueMax, 2), valueX, y, 2, colour);
+            y += step;
+        };
+
+        row("Machine", deviceName, COLOR_WHITE);
+        row("Firmware", fwVersion, COLOR_WHITE);
+        row("Wi-Fi", (staConnected && staIP.length() > 0) ? staIP : String("offline"),
+            staConnected ? COLOR_GREEN : COLOR_RED);
+        row("Hotspot", apSSID, COLOR_CYAN);
+        row("Status", serviceEnabled ? String("READY TO PLAY") : String("MAINTENANCE"),
+            serviceEnabled ? COLOR_GREEN : COLOR_RED);
+        row("Relay", relayOn ? String("ON (PLAYING)") : String("IDLE (OFF)"),
+            relayOn ? COLOR_YELLOW : COLOR_GRAY);
+
+        drawFooter("LEFT:BACK", "", "", COLOR_YELLOW);
+    }
+
+    // =========================================================================
+    // 8. NOTICE SCREEN: Popup message that auto-closes
+    // =========================================================================
+    void showNoticeScreen(const String& title, const String& message, uint16_t colour) {
+        if (!activeDisplay) return;
+        activeDisplay->fillScreen(COLOR_BG);
+        const uint16_t ink = (colour == COLOR_RED) ? COLOR_WHITE : COLOR_BLACK;
+        drawHeader(title, colour, ink);
+
+        const int cardX = 14;
+        const int cardY = HEADER_H + 16;
+        const int cardW = screenWidth - 28;
+        const int cardH = screenHeight - HEADER_H - FOOTER_H - 32;
+        drawCard(cardX, cardY, cardW, cardH, colour);
+
+        textFit(message, cardX + 10, cardW - 20, cardY + (cardH - textH(3)) / 2, 3, COLOR_WHITE);
+        drawFooter("", "", "", COLOR_BG);
     }
 };
 

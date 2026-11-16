@@ -92,6 +92,20 @@ class SessionStore {
     return { success: true, session };
   }
 
+  markCancelled(qrId) {
+    const session = this.getSession(qrId);
+    if (!session) return null;
+
+    if (session.status === 'captured' || session.status === 'consumed') {
+      console.warn(`[STORE] Cannot cancel already paid/consumed session: ${qrId}`);
+      return session;
+    }
+
+    session.status = 'cancelled';
+    console.log(`[STORE] Session ${qrId} marked CANCELLED.`);
+    return session;
+  }
+
   // Throttle remote (Razorpay) status checks; returns true if a check is due now
   shouldCheckRemote(session) {
     const now = Date.now();
