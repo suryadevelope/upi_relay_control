@@ -240,6 +240,7 @@ private:
         doc["wifiSsid"] = s.staSSID;
         doc["wifiConnected"] = network->isConnectedToInternet();
         doc["wifiIP"] = network->getStaIP();
+        doc["mode2Enabled"] = s.mode2Enabled;
 
         JsonArray rules = doc["rules"].to<JsonArray>();
         for (int i = 0; i < s.ruleCount; i++) {
@@ -329,6 +330,10 @@ private:
             }
             for (int i = 0; i < n; i++) s.rules[i] = parsed[i];
             s.ruleCount = n;
+        }
+
+        if (body["mode2Enabled"].is<bool>()) {
+            s.mode2Enabled = body["mode2Enabled"].as<bool>();
         }
 
         storage->getSettings() = staged;

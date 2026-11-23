@@ -85,6 +85,7 @@ class App(tk.Tk):
         self.clients = {}          # ip -> DeviceClient (logged in)
         self.selected_ip = None
         self.rules = []            # payment cards being edited: [{"amount", "duration"}]
+        self.mode2Enabled = False  # 2nd mode: fixed 5s relay + "enjoy the game" on device
         self.scan_results = []
 
         self.build_ui()
@@ -108,7 +109,7 @@ class App(tk.Tk):
             try:
                 result = work()
             except Exception as exc:  # reported on the UI thread
-                self.ui_queue.put(lambda: (on_error or self.show_error)(exc))
+                self.ui_queue.put(lambda exc=exc: (on_error or self.show_error)(exc))
             else:
                 self.ui_queue.put(lambda: on_done(result))
         threading.Thread(target=worker, daemon=True).start()
@@ -252,6 +253,14 @@ class App(tk.Tk):
         ttk.Button(actions, text="Stop service", command=lambda: self.set_service(False)).grid(row=0, column=2, padx=4)
         ttk.Button(actions, text="Cancel active payment", command=self.cancel_payment).grid(row=0, column=3, padx=4)
         ttk.Button(actions, text="Restart device", command=self.restart_device).grid(row=0, column=4, padx=4)
+
+        self.mode2_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(
+            actions,
+            text="2nd mode: 5 s relay + 'enjoy the game' (device only)",
+            variable=self.mode2_var,
+            command=self.set_mode2,
+        ).grid(row=1, column=0, columnspan=5, sticky="w", padx=4, pady=(8, 0))
 
         relay_box = ttk.LabelFrame(self.tab_overview, text="Relay test", padding=10)
         relay_box.pack(anchor="w", fill="x", pady=(12, 0))
@@ -510,6 +519,9 @@ class App(tk.Tk):
         self.rules = [{"amount": r["amount"], "duration": r["duration"]} for r in cfg.get("rules", [])]
         self.render_cards()
 
+        self.mode2Enabled = bool(cfg.get("mode2Enabled", False))
+        self.mode2_var.set(self.mode2Enabled)
+
         self.wifi_current.config(text=f"Current Wi-Fi: {cfg.get('wifiSsid') or '(not set)'}"
                                       + (" - connected" if cfg.get("wifiConnected") else " - offline"))
         self.sec_vars["name"].set(cfg.get("name", ""))
@@ -632,6 +644,14 @@ class App(tk.Tk):
 
     def relay_off(self):
         self.with_device("Relay OFF...", lambda c: c.relay_off(), None)
+
+    def set_mode2(self):
+        enabled = bool(self.mode2_var.get())
+        self.with_device(
+            f"2nd mode {'on' if enabled else 'off'}...",
+            lambda c: c.set_config(mode2Enabled=enabled),
+            lambda _r: self.refresh_device(),
+        )
 
     # ------------------------------------------------------------------
     # Wi-Fi (hotspot only)

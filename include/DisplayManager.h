@@ -482,6 +482,57 @@ public:
     }
 
     // =========================================================================
+    // 5b. MODE 2 SUCCESS SCREEN: fixed 5s relay + "enjoy the game" (device only)
+    // =========================================================================
+    void showMode2SuccessScreen(float amount) {
+        if (!activeDisplay) return;
+        activeDisplay->fillScreen(COLOR_BG);
+        drawHeader("MODE 2 - 5S PLAY", COLOR_EMERALD, COLOR_BLACK);
+
+        const int cardX = 14;
+        const int cardY = HEADER_H + 8;
+        const int cardW = screenWidth - 28;
+        const int cardH = screenHeight - HEADER_H - FOOTER_H - 16;
+
+        drawCard(cardX, cardY, cardW, cardH, COLOR_EMERALD);
+
+        textCentered("PAYMENT VERIFIED", cardX, cardW, cardY + 10, 2, COLOR_WHITE);
+        textFit(formatAmount(amount) + " COIN INSERTED", cardX + 10, cardW - 20, cardY + 30, 3, COLOR_YELLOW);
+
+        // Big device-only message
+        textFit("ENJOY THE GAME", cardX + 10, cardW - 20, cardY + 58, 3, COLOR_GREEN);
+
+        updateMode2RelayStatus(MODE2_RELAY_SECONDS);
+
+        textCentered("RELAY ON FOR 5s", cardX, cardW, cardY + 116, 2, COLOR_YELLOW);
+        textCentered("AUTO OFF WHEN TIME ENDS", cardX, cardW, cardY + 134, 2, COLOR_CYAN);
+
+        drawFooter("FUNNHUB", "MODE 2 ACTIVE", "ENJOY!", COLOR_GREEN);
+    }
+
+    void updateMode2RelayStatus(uint32_t remainingRelaySec) {
+        if (!activeDisplay) return;
+        const int cardX = 14;
+        const int cardY = HEADER_H + 8;
+        const int cardW = screenWidth - 28;
+        const int bx = cardX + 16;
+        const int by = cardY + 90;
+        const int bw = cardW - 32;
+        const int bh = 46;
+
+        activeDisplay->fillRoundRect(bx, by, bw, bh, 6, COLOR_BG);
+
+        if (remainingRelaySec > 0) {
+            drawCard(bx, by, bw, bh, COLOR_GREEN);
+            String playText = "ENJOY THE GAME: " + String(remainingRelaySec) + "s";
+            textFit(playText, bx + 6, bw - 12, by + (bh - textH(3)) / 2, 3, COLOR_GREEN);
+        } else {
+            drawCard(bx, by, bw, bh, COLOR_RED);
+            textFit("ENJOY YOUR GAME", bx + 6, bw - 12, by + (bh - textH(3)) / 2, 3, COLOR_RED);
+        }
+    }
+
+    // =========================================================================
     // 6. PAYMENT FAILED / CANCELLED SCREEN
     // =========================================================================
     void showPaymentFailedScreen(const String& reason = "Payment Expired") {

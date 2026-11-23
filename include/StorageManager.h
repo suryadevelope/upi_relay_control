@@ -36,6 +36,7 @@ public:
         settings.relayPin = DEFAULT_RELAY_PIN;
         settings.relayActiveHigh = DEFAULT_RELAY_ACTIVE_HIGH;
         settings.debugMode = DEFAULT_DEBUG_MODE;
+        settings.mode2Enabled = false;
 
         settings.displayType = DEFAULT_DISPLAY_TYPE; // ST7789 for the KMRTM24024-SPI 2.8" TFT
         settings.tftCS = DEFAULT_TFT_CS;
@@ -88,6 +89,7 @@ public:
         settings.relayPin = prefs.getInt("relayPin", DEFAULT_RELAY_PIN);
         settings.relayActiveHigh = prefs.getBool("relayActiveHigh", DEFAULT_RELAY_ACTIVE_HIGH);
         settings.debugMode = prefs.getBool("debugMode", DEFAULT_DEBUG_MODE);
+        settings.mode2Enabled = prefs.getBool("mode2", false);
 
         settings.displayType = prefs.getInt("dispType_v2", DEFAULT_DISPLAY_TYPE);
         settings.tftCS = prefs.getInt("tftCS", DEFAULT_TFT_CS);
@@ -132,6 +134,7 @@ public:
         prefs.putInt("relayPin", settings.relayPin);
         prefs.putBool("relayActiveHigh", settings.relayActiveHigh);
         prefs.putBool("debugMode", settings.debugMode);
+        prefs.putBool("mode2", settings.mode2Enabled);
 
         prefs.putInt("dispType", settings.displayType);
         prefs.putInt("dispType_v2", settings.displayType);

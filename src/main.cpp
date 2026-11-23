@@ -57,6 +57,7 @@ unsigned long lastDisplayUpdate = 0;
 unsigned long errorStartTime = 0;
 unsigned long stateEnteredTime = 0;
 bool relayIsPayment = false;   // false while the admin is running a relay test
+bool mode2Active = false;      // true while a mode-2 (fixed 5s) relay cycle runs
 
 int selectedRuleIndex = 0;
 bool lastWifiState = false;
@@ -209,8 +210,11 @@ void loop() {
 
                 if (paymentClient.checkPaymentStatus(activeQrId, status, paymentId, authToken, err)) {
                     if (status == "captured") {
-                        Serial.printf("[MAIN] Payment CAPTURED! ID=%s. Relay for %us\n",
-                                      paymentId.c_str(), activeDuration);
+                        DeviceSettings& s = storage.getSettings();
+                        Serial.printf("[MAIN] Payment CAPTURED! ID=%s. Relay for %us (mode2=%d)\n",
+                                      paymentId.c_str(),
+                                      s.mode2Enabled ? MODE2_RELAY_SECONDS : activeDuration,
+                                      s.mode2Enabled ? 1 : 0);
 
                         // Anti-replay: reject a payment ID we already honoured
                         if (storage.isPaymentConsumed(paymentId.c_str())) {
@@ -224,16 +228,25 @@ void loop() {
 
                         paymentClient.consumePayment(activeQrId, paymentId, authToken);
 
-                        // Record the real payment ID so replays are caught later
-                        storage.logTransaction(activeQrId.c_str(), paymentId.c_str(),
-                                               activeAmount, activeDuration, true);
+                        // 2nd mode: fixed 5-second relay regardless of the card's configured duration
+                        uint32_t relayDuration = s.mode2Enabled ? MODE2_RELAY_SECONDS : activeDuration;
+                        bool isMode2 = s.mode2Enabled;
 
-                        relay.setState(STATE_PAID);
+                        // Record the real payment ID so replays are caught later (log the actual relay time)
+                        storage.logTransaction(activeQrId.c_str(), paymentId.c_str(),
+                                               activeAmount, relayDuration, true);
+
                         relayIsPayment = true;
-                        relay.activate(activeDuration);
+                        mode2Active = isMode2;
+                        relay.activate(relayDuration);
                         relay.setState(STATE_RELAY_ON);
 
-                        display.showPaymentSuccessScreen(activeAmount, activeDuration, relay.getRemainingSeconds());
+                        if (isMode2) {
+                            // "enjoy the game" only on the device
+                            display.showMode2SuccessScreen(activeAmount);
+                        } else {
+                            display.showPaymentSuccessScreen(activeAmount, activeDuration, relay.getRemainingSeconds());
+                        }
                         lastDisplayUpdate = millis();
                     } else if (status == "expired") {
                         relay.setState(STATE_ERROR);
@@ -252,7 +265,10 @@ void loop() {
             if (millis() - lastDisplayUpdate >= 1000) {
                 lastDisplayUpdate = millis();
                 uint32_t rem = relay.getRemainingSeconds();
-                if (relayIsPayment) {
+                if (mode2Active) {
+                    // Mode 2: device-only "enjoy the game" countdown
+                    display.updateMode2RelayStatus(rem);
+                } else if (relayIsPayment) {
                     display.updatePaymentSuccessRelayStatus(rem);
                 } else {
                     display.showNoticeScreen("RELAY TEST", "ON for " + String(rem) + " s", COLOR_CYAN);
@@ -430,9 +446,15 @@ void cancelActivePayment() {
 // Called when the relay timer runs out
 void onRelayFinished() {
     Serial.printf("[RELAY] Cycle finished (%s). Game Over.\n", relayIsPayment ? "payment" : "test");
+    bool wasMode2 = mode2Active;
     relay.setState(STATE_READY);
     resetPaymentSession();
-    display.updatePaymentSuccessRelayStatus(0);
+    mode2Active = false;
+    if (wasMode2) {
+        display.updateMode2RelayStatus(0);  // "ENJOY YOUR GAME"
+    } else {
+        display.updatePaymentSuccessRelayStatus(0);
+    }
     delay(1200);
     menuScreen = MENU_HOME;
     refreshMenu();

@@ -73,6 +73,9 @@ enum DisplayDriverType {
 #define QR_EXPIRY_SECONDS          300      // 5 minutes
 #define STATUS_POLL_INTERVAL_MS    1500     // Poll backend every 1.5s (fast confirmation, optimal load for 15-30 devices)
 
+// 2nd Mode: fixed short relay pulse after any successful payment
+#define MODE2_RELAY_SECONDS        5        // relay ON for exactly 5 seconds in mode 2
+
 // ==========================================
 // System State Machine Definition
 // ==========================================
@@ -132,6 +135,7 @@ struct DeviceSettings {
     int relayPin;
     bool relayActiveHigh;
     bool debugMode;
+    bool mode2Enabled;   // 2nd mode: fixed 5s relay + "enjoy the game" on device only
     int displayType;
     int tftCS;
     int tftDC;

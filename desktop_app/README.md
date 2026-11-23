@@ -10,6 +10,21 @@ is the only admin UI.
 python main.py
 ```
 
+Or run the pre-built standalone single-file Windows executable:
+```
+dist\SmartGatewayAdmin.exe
+```
+
+## Build Single-File Windows Executable
+
+To compile into a standalone single-file `.exe` without console:
+```
+pip install pyinstaller
+pyinstaller --onefile --windowed --clean --name SmartGatewayAdmin main.py
+```
+The executable is generated at `dist/SmartGatewayAdmin.exe`.
+
+
 Requires Python 3.9+ on Windows with tkinter (included in the standard installer).
 No third-party packages.
 
