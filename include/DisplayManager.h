@@ -2,6 +2,7 @@
 #define DISPLAY_MANAGER_H
 
 #include <Arduino.h>
+#include <SPI.h>
 #include <TFT_eSPI.h>   // Driver, pins, rotation setup come from the TFT_* build flags in platformio.ini
 #include "Config.h"
 #include "QRCodeRenderer.h"
@@ -55,6 +56,33 @@ private:
         return (int)s.length() * 6 * size;
     }
     static int textH(uint8_t size) { return 8 * size; }
+
+    // ------------------------------------------------------------------------
+    // Display controller auto-detection (reads the controller ID register via
+    // raw SPI after tft.init(), so we can report which panel is connected)
+    // ------------------------------------------------------------------------
+    // Detect which controller is connected. Returns DISPLAY_ILI9341 or DISPLAY_ST7789.
+    int detectDisplayController() {
+        SPIClass &spi = TFT_eSPI::getSPIinstance();
+        spi.beginTransaction(SPISettings(1000000, MSBFIRST, SPI_MODE0));
+        digitalWrite(TFT_CS, LOW);
+        digitalWrite(TFT_DC, LOW);
+        spi.transfer(TFT_ID_REG_ILI9341);   // ILI9341 ID4 command (0xD3)
+        digitalWrite(TFT_DC, HIGH);
+        spi.transfer(0x00);                 // dummy byte required by ILI9341 read
+        uint8_t b0 = spi.transfer(0x00);    // ID byte 0
+        uint8_t b1 = spi.transfer(0x00);    // ID byte 1
+        uint8_t b2 = spi.transfer(0x00);    // ID byte 2
+        digitalWrite(TFT_CS, HIGH);
+        spi.endTransaction();
+
+        // ILI9341 ID4 should read back 0x00 0x93 0x41
+        if (b0 == ILI9341_ID_BYTE0 && b1 == ILI9341_ID_BYTE1 && b2 == ILI9341_ID_BYTE2) {
+            return DISPLAY_ILI9341;
+        }
+        // Fallback: assume ST7789
+        return DISPLAY_ST7789;
+    }
 
     String formatAmount(float amount) const {
         long whole = (long)(amount + 0.5f);
@@ -128,12 +156,12 @@ private:
         activeDisplay->fillRect(0, y + 1, screenWidth, FOOTER_H - 1, COLOR_BG);
         const int ty = y + (FOOTER_H - textH(2)) / 2 + 1;
 
-        int leftEnd = 6;
+        int leftEnd = 10;
         if (left.length()) {
-            text(left, 6, ty, 2, COLOR_YELLOW);
-            leftEnd = 6 + textW(left, 2);
+            text(left, 10, ty, 2, COLOR_YELLOW);
+            leftEnd = 10 + textW(left, 2);
         }
-        int rightStart = screenWidth - 6;
+        int rightStart = screenWidth - 10;
         if (right.length()) {
             rightStart = screenWidth - 6 - textW(right, 2);
             text(right, rightStart, ty, 2, COLOR_YELLOW);
@@ -163,11 +191,32 @@ public:
             writeBacklight(brightness);
         }
 
-        Serial.printf("[DISPLAY] Initializing ST7789 240x320 via TFT_eSPI (CS=%d, DC=%d, RST=%d)...\n",
+        // ---- Initialize TFT_eSPI (configures the SPI bus) -----------------
+        Serial.printf("[DISPLAY] Initializing TFT_eSPI (CS=%d, DC=%d, RST=%d)...\n",
                       TFT_CS, TFT_DC, TFT_RST);
         tft.init();
         tft.setRotation(rotation);
         activeDisplay = &tft;
+
+        // ---- Auto-detect connected display controller ---------------------
+        int detectedType = detectDisplayController();
+        const char* detectedName = (detectedType == DISPLAY_ILI9341) ? "ILI9341" : "ST7789";
+        const char* compiledName =
+#ifdef ILI9341_DRIVER
+            "ILI9341";
+#else
+            "ST7789";
+#endif
+
+        Serial.printf("[DISPLAY] Detected controller: %s | Compiled driver: %s\n",
+                      detectedName, compiledName);
+
+        if ((detectedType == DISPLAY_ILI9341) != (compiledName[0] == 'I')) {
+            Serial.printf("[DISPLAY] WARNING: detected %s but compiled with %s driver!\n",
+                          detectedName, compiledName);
+            Serial.printf("[DISPLAY] Fix: change platformio.ini -> -D%s_DRIVER=1 for this panel.\n",
+                          detectedName);
+        }
 
         screenWidth = tft.width();
         screenHeight = tft.height();
@@ -315,12 +364,10 @@ public:
     // =========================================================================
     static constexpr int LOAD_CARD_X = 14;
     static constexpr int LOAD_CARD_Y = HEADER_H + 8; // 48
-    static constexpr int LOAD_CARD_W = 292;
-    static constexpr int LOAD_CARD_H = 154; // bottom = 202
+    static constexpr int LOAD_CARD_H = 154;          // bottom = 202
 
     static constexpr int LOAD_BAR_X = 36;
     static constexpr int LOAD_BAR_Y = 138;
-    static constexpr int LOAD_BAR_W = 248;
     static constexpr int LOAD_BAR_H = 20;
 
     void showLoadingScreen(float amount) {
@@ -328,22 +375,25 @@ public:
         activeDisplay->fillScreen(COLOR_BG);
         drawHeader("CONNECTING TO BANK...", COLOR_WHITE, COLOR_BLACK);
 
-        drawCard(LOAD_CARD_X, LOAD_CARD_Y, LOAD_CARD_W, LOAD_CARD_H, COLOR_YELLOW);
+        const int cardW = screenWidth - 2 * LOAD_CARD_X;      // 292 on 320 px
+        const int barW  = screenWidth - LOAD_BAR_X - LOAD_CARD_X; // 248 on 320 px
+
+        drawCard(LOAD_CARD_X, LOAD_CARD_Y, cardW, LOAD_CARD_H, COLOR_YELLOW);
 
         // Row 1: Label (y = 60..76)
-        textCentered("GAME PASS TICKET", LOAD_CARD_X, LOAD_CARD_W, LOAD_CARD_Y + 12, 2, COLOR_GRAY);
+        textCentered("GAME PASS TICKET", LOAD_CARD_X, cardW, LOAD_CARD_Y + 12, 2, COLOR_GRAY);
 
         // Row 2: Amount (y = 80..104)
-        textFit(formatAmount(amount), LOAD_CARD_X + 10, LOAD_CARD_W - 20, LOAD_CARD_Y + 32, 3, COLOR_GREEN);
+        textFit(formatAmount(amount), LOAD_CARD_X + 10, cardW - 20, LOAD_CARD_Y + 32, 3, COLOR_GREEN);
 
         // Row 3: Divider line (y = 108)
-        activeDisplay->drawFastHLine(LOAD_CARD_X + 16, LOAD_CARD_Y + 60, LOAD_CARD_W - 32, COLOR_DARK_GRAY);
+        activeDisplay->drawFastHLine(LOAD_CARD_X + 16, LOAD_CARD_Y + 60, cardW - 32, COLOR_DARK_GRAY);
 
-        // Row 4: Status text (y = 116..132, 19 chars = 228px, centered in 292px)
-        textCentered("Creating Game QR...", LOAD_CARD_X, LOAD_CARD_W, LOAD_CARD_Y + 68, 2, COLOR_YELLOW);
+        // Row 4: Status text (y = 116..132)
+        textCentered("Creating Game QR...", LOAD_CARD_X, cardW, LOAD_CARD_Y + 68, 2, COLOR_YELLOW);
 
         // Row 5: Progress bar outline (y = 138..158)
-        drawCard(LOAD_BAR_X, LOAD_BAR_Y, LOAD_BAR_W, LOAD_BAR_H, COLOR_WHITE);
+        drawCard(LOAD_BAR_X, LOAD_BAR_Y, barW, LOAD_BAR_H, COLOR_WHITE);
         updateLoadingBar(0);
 
         // Footer: (y = 210..240)
@@ -352,8 +402,11 @@ public:
 
     void updateLoadingBar(uint32_t elapsedMs) {
         if (!activeDisplay) return;
+        const int cardW = screenWidth - 2 * LOAD_CARD_X;
+        const int barW  = screenWidth - LOAD_BAR_X - LOAD_CARD_X;
+
         const int inX = LOAD_BAR_X + 3;
-        const int inW = LOAD_BAR_W - 6;
+        const int inW = barW - 6;
         const int inY = LOAD_BAR_Y + 3;
         const int inH = LOAD_BAR_H - 6;
         const int block = 60;
@@ -368,8 +421,8 @@ public:
         // Row 6: Elapsed seconds under progress bar (y = 166..182)
         char buf[32];
         snprintf(buf, sizeof(buf), "Please wait...  %lus", (unsigned long)(elapsedMs / 1000));
-        activeDisplay->fillRect(LOAD_CARD_X + 20, LOAD_BAR_Y + LOAD_BAR_H + 8, LOAD_CARD_W - 40, 18, COLOR_BG);
-        textCentered(String(buf), LOAD_CARD_X, LOAD_CARD_W, LOAD_BAR_Y + LOAD_BAR_H + 8, 2, COLOR_GRAY);
+        activeDisplay->fillRect(LOAD_CARD_X + 20, LOAD_BAR_Y + LOAD_BAR_H + 8, cardW - 40, 18, COLOR_BG);
+        textCentered(String(buf), LOAD_CARD_X, cardW, LOAD_BAR_Y + LOAD_BAR_H + 8, 2, COLOR_GRAY);
     }
 
     // =========================================================================
@@ -378,7 +431,7 @@ public:
     static constexpr int QR_X = 8;
     static constexpr int QR_Y = HEADER_H + 4; // 44
     static constexpr int QR_SIZE = 158;
-    static constexpr int PANEL_X = 174;
+    // PANEL_X computed from screenWidth so the right panel keeps an 8 px right margin
     static constexpr int PANEL_W = 138;
 
     void showQRScreen(const String& qrPayload, float amount, uint32_t durationSec,
@@ -387,33 +440,35 @@ public:
         activeDisplay->fillScreen(COLOR_BG);
         drawHeader("SCAN TO PLAY: " + formatAmount(amount), COLOR_WHITE, COLOR_BLACK);
 
+        const int panelX = screenWidth - PANEL_W - 8;   // 174 on 320 px
+
         // White background card with black QR modules for optimal camera scanning
         QRCodeRenderer::renderToDisplay(activeDisplay, qrPayload, QR_X, QR_Y, QR_SIZE,
                                         COLOR_BLACK, COLOR_WHITE);
 
         // Right panel outline
-        drawCard(PANEL_X, QR_Y, PANEL_W, QR_SIZE, COLOR_GRAY);
+        drawCard(panelX, QR_Y, PANEL_W, QR_SIZE, COLOR_GRAY);
 
         // 1. Top badge: "PLAY GAME"
-        activeDisplay->fillRoundRect(PANEL_X + 6, QR_Y + 6, PANEL_W - 12, 22, 4, COLOR_YELLOW);
-        textCentered("PLAY GAME", PANEL_X + 6, PANEL_W - 12, QR_Y + 9, 2, COLOR_BLACK);
+        activeDisplay->fillRoundRect(panelX + 6, QR_Y + 6, PANEL_W - 12, 22, 4, COLOR_YELLOW);
+        textCentered("PLAY GAME", panelX + 6, PANEL_W - 12, QR_Y + 9, 2, COLOR_BLACK);
 
         // 2. Subtitle: "ANY UPI APP"
-        textCentered("ANY UPI APP", PANEL_X, PANEL_W, QR_Y + 32, 2, COLOR_WHITE);
+        textCentered("ANY UPI APP", panelX, PANEL_W, QR_Y + 32, 2, COLOR_WHITE);
 
         // 3. Divider
-        activeDisplay->drawFastHLine(PANEL_X + 8, QR_Y + 52, PANEL_W - 16, COLOR_DARK_GRAY);
+        activeDisplay->drawFastHLine(panelX + 8, QR_Y + 52, PANEL_W - 16, COLOR_DARK_GRAY);
 
         // 4. Timer section
-        textCentered("TIME LEFT", PANEL_X, PANEL_W, QR_Y + 58, 2, COLOR_YELLOW);
+        textCentered("TIME LEFT", panelX, PANEL_W, QR_Y + 58, 2, COLOR_YELLOW);
         updateQRCountdown(remainingSec);
 
         // 5. Divider
-        activeDisplay->drawFastHLine(PANEL_X + 8, QR_Y + 110, PANEL_W - 16, COLOR_DARK_GRAY);
+        activeDisplay->drawFastHLine(panelX + 8, QR_Y + 110, PANEL_W - 16, COLOR_DARK_GRAY);
 
         // 6. Game time and auto start badge
-        textCentered("TIME: " + formatDuration(durationSec), PANEL_X, PANEL_W, QR_Y + 116, 2, COLOR_GREEN);
-        textCentered("AUTO START", PANEL_X, PANEL_W, QR_Y + 134, 2, COLOR_CYAN);
+        textCentered("TIME: " + formatDuration(durationSec), panelX, PANEL_W, QR_Y + 116, 2, COLOR_GREEN);
+        textCentered("AUTO START", panelX, PANEL_W, QR_Y + 134, 2, COLOR_CYAN);
 
         drawFooter("LEFT:CANCEL", "", "ENTER:CANCEL", COLOR_YELLOW);
     }
@@ -421,7 +476,8 @@ public:
     void updateQRCountdown(uint32_t remainingSec) {
         if (!activeDisplay) return;
         const int y = QR_Y + 80;
-        activeDisplay->fillRect(PANEL_X + 4, y - 2, PANEL_W - 8, textH(3) + 4, COLOR_BG);
+        const int panelX = screenWidth - PANEL_W - 8;   // 174 on 320 px
+        activeDisplay->fillRect(panelX + 4, y - 2, PANEL_W - 8, textH(3) + 4, COLOR_BG);
 
         uint16_t colour = COLOR_WHITE;
         if (remainingSec <= 30) colour = COLOR_RED;
@@ -430,7 +486,7 @@ public:
         char buf[8];
         snprintf(buf, sizeof(buf), "%02lu:%02lu",
                  (unsigned long)(remainingSec / 60), (unsigned long)(remainingSec % 60));
-        textCentered(String(buf), PANEL_X, PANEL_W, y, 3, colour);
+        textCentered(String(buf), panelX, PANEL_W, y, 3, colour);
     }
 
     // =========================================================================

@@ -18,8 +18,9 @@
 #define DEFAULT_RELAY_PIN          26
 #define DEFAULT_RELAY_ACTIVE_HIGH  true
 
-// KMRTM24024-SPI 2.8-inch TFT (ST7789, 240x320 native, 320x240 landscape)
-// Pins must match the TFT_* build_flags in platformio.ini (TFT_eSPI is configured there).
+// KMRTM24024-SPI 2.8-inch TFT. Driver is fixed at build time by ST7789_DRIVER or
+// ILI9341_DRIVER in platformio.ini. The firmware auto-detects the connected panel
+// at runtime and reports it via serial; stored in settings.displayType.
 // ESP32 VSPI default pins: MOSI = GPIO 23, SCLK = GPIO 18, MISO = GPIO 19
 #define DEFAULT_TFT_MOSI           23
 #define DEFAULT_TFT_SCLK           18
@@ -29,12 +30,20 @@
 #define DEFAULT_TFT_RST            22
 #define DEFAULT_TFT_BL             4   // Backlight LED (optional)
 
-// Display Driver Types (driver is fixed at build time by ST7789_DRIVER in platformio.ini)
+// Display Driver Types (driver is fixed at build time in platformio.ini;
+// auto-detection at runtime reports which panel is actually connected)
 enum DisplayDriverType {
     DISPLAY_ST7789 = 0,
     DISPLAY_ILI9341 = 1
 };
 #define DEFAULT_DISPLAY_TYPE       DISPLAY_ST7789
+
+// Controller ID register values for auto-detection
+#define TFT_ID_REG_ILI9341         0xD3   // ILI9341 ID4 read command
+#define TFT_ID_REG_ST7789          0x04   // ST7789 RDDID read command
+#define ILI9341_ID_BYTE0           0x00   // ILI9341 ID4 byte0 = 0x00
+#define ILI9341_ID_BYTE1           0x93   // ILI9341 ID4 byte1 = 0x93
+#define ILI9341_ID_BYTE2           0x41   // ILI9341 ID4 byte2 = 0x41
 
 // ==========================================
 // Default Network & Security Credentials
