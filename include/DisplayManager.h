@@ -533,6 +533,72 @@ public:
     }
 
     // =========================================================================
+    // 5c. PULSE COUNT SCREEN: "PULSE i of n - ON/OFF: Xs"
+    // =========================================================================
+    void showPulseCountScreen(uint32_t pulseIndex, uint32_t pulseTotal, bool relayOn,
+                              uint32_t remainingSec) {
+        if (!activeDisplay) return;
+        activeDisplay->fillScreen(COLOR_BG);
+        drawHeader("PULSE PLAY ACTIVE", COLOR_EMERALD, COLOR_BLACK);
+
+        const int cardX = 14;
+        const int cardY = HEADER_H + 8;
+        const int cardW = screenWidth - 28;
+        const int cardH = screenHeight - HEADER_H - FOOTER_H - 16;
+
+        drawCard(cardX, cardY, cardW, cardH, COLOR_EMERALD);
+
+        textCentered("PAYMENT VERIFIED", cardX, cardW, cardY + 10, 2, COLOR_WHITE);
+
+        // Pulse counter: current pulse in progress (ON) or just completed (OFF)
+        uint32_t current = relayOn ? (pulseIndex + 1) : pulseIndex;
+        if (current < 1) current = 1;
+        if (current > pulseTotal) current = pulseTotal;
+        String counter = "PULSE " + String(current) + " of " + String(pulseTotal);
+        textCentered(counter, cardX, cardW, cardY + 34, 3, COLOR_YELLOW);
+
+        // Phase + countdown
+        String phaseText = relayOn ? ("ON: " + String(remainingSec) + "s")
+                                   : ("OFF: " + String(remainingSec) + "s");
+        textCentered(phaseText, cardX, cardW, cardY + 72, 3, relayOn ? COLOR_GREEN : COLOR_ORANGE);
+
+        textCentered("RELAY PULSING", cardX, cardW, cardY + 110, 2, COLOR_WHITE);
+        textCentered("AUTO OFF WHEN DONE", cardX, cardW, cardY + 130, 2, COLOR_CYAN);
+
+        drawFooter("FUNNHUB", "PULSE PLAY", "PLEASE WAIT", COLOR_GREEN);
+    }
+
+    // =========================================================================
+    // 5d. PULSE MESSAGE WAIT SCREEN: message + "Returning home in Xs"
+    // =========================================================================
+    void showPulseMessageWaitScreen(const String& message, uint32_t remainingSec) {
+        if (!activeDisplay) return;
+        activeDisplay->fillScreen(COLOR_BG);
+        drawHeader("PLAY ENDED", COLOR_EMERALD, COLOR_BLACK);
+
+        const int cardX = 14;
+        const int cardY = HEADER_H + 8;
+        const int cardW = screenWidth - 28;
+        const int cardH = screenHeight - HEADER_H - FOOTER_H - 16;
+
+        drawCard(cardX, cardY, cardW, cardH, COLOR_EMERALD);
+
+        textCentered("PAYMENT VERIFIED", cardX, cardW, cardY + 10, 2, COLOR_WHITE);
+
+        // The configured message (e.g. "Best of luck for the game")
+        String shown = message.length() > 0 ? message : String("Best of luck for the game");
+        textFit(shown, cardX + 10, cardW - 20, cardY + 34, 3, COLOR_YELLOW);
+
+        String returning = "Returning home in " + String(remainingSec) + "s";
+        textCentered(returning, cardX, cardW, cardY + 86, 2, COLOR_WHITE);
+
+        textCentered("RELAY OFF", cardX, cardW, cardY + 114, 2, COLOR_YELLOW);
+        textCentered("AUTO RETURN TO MENU", cardX, cardW, cardY + 134, 2, COLOR_CYAN);
+
+        drawFooter("FUNNHUB", "BEST OF LUCK", "PLEASE WAIT", COLOR_GREEN);
+    }
+
+    // =========================================================================
     // 6. PAYMENT FAILED / CANCELLED SCREEN
     // =========================================================================
     void showPaymentFailedScreen(const String& reason = "Payment Expired") {

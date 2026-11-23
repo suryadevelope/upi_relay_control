@@ -47,9 +47,18 @@ public:
 
         // Default Payment Rules: Game play duration
         settings.ruleCount = 3;
-        settings.rules[0] = { 1.0f, 10 };  // Rs. 1 -> 10 Seconds Play
-        settings.rules[1] = { 5.0f, 60 };  // Rs. 5 -> 1 Minute Play
-        settings.rules[2] = { 10.0f, 180 }; // Rs. 10 -> 3 Minutes Play
+        {
+            PaymentRule r = { 1.0f, 10, RELAY_MODE_TIMER, 1, DEFAULT_PULSE_ON_SEC, DEFAULT_PULSE_OFF_SEC, DEFAULT_PULSE_WAIT_SEC, "Best of luck for the game" };
+            settings.rules[0] = r;  // Rs. 1 -> 10 Seconds Play
+        }
+        {
+            PaymentRule r = { 5.0f, 60, RELAY_MODE_TIMER, 1, DEFAULT_PULSE_ON_SEC, DEFAULT_PULSE_OFF_SEC, DEFAULT_PULSE_WAIT_SEC, "Best of luck for the game" };
+            settings.rules[1] = r;  // Rs. 5 -> 1 Minute Play
+        }
+        {
+            PaymentRule r = { 10.0f, 180, RELAY_MODE_TIMER, 1, DEFAULT_PULSE_ON_SEC, DEFAULT_PULSE_OFF_SEC, DEFAULT_PULSE_WAIT_SEC, "Best of luck for the game" };
+            settings.rules[2] = r; // Rs. 10 -> 3 Minutes Play
+        }
     }
 
     void loadSettings() {
@@ -101,18 +110,43 @@ public:
         settings.ruleCount = prefs.getInt("ruleCount", 0);
         if (settings.ruleCount <= 0 || settings.ruleCount > MAX_RULES || !prefs.isKey("rules_v3")) {
             settings.ruleCount = 3;
-            settings.rules[0] = { 1.0f, 10 };
-            settings.rules[1] = { 5.0f, 60 };
-            settings.rules[2] = { 10.0f, 180 };
+            {
+                PaymentRule r = { 1.0f, 10, RELAY_MODE_TIMER, 1, DEFAULT_PULSE_ON_SEC, DEFAULT_PULSE_OFF_SEC, DEFAULT_PULSE_WAIT_SEC, "Best of luck for the game" };
+                settings.rules[0] = r;
+            }
+            {
+                PaymentRule r = { 5.0f, 60, RELAY_MODE_TIMER, 1, DEFAULT_PULSE_ON_SEC, DEFAULT_PULSE_OFF_SEC, DEFAULT_PULSE_WAIT_SEC, "Best of luck for the game" };
+                settings.rules[1] = r;
+            }
+            {
+                PaymentRule r = { 10.0f, 180, RELAY_MODE_TIMER, 1, DEFAULT_PULSE_ON_SEC, DEFAULT_PULSE_OFF_SEC, DEFAULT_PULSE_WAIT_SEC, "Best of luck for the game" };
+                settings.rules[2] = r;
+            }
             saveSettings();
             prefs.putBool("rules_v3", true);
         } else {
             for (int i = 0; i < settings.ruleCount; i++) {
                 char keyA[16], keyD[16];
+                char keyM[16], keyPC[16], keyPO[16], keyPF[16], keyPW[16], keyMSG[16];
                 snprintf(keyA, sizeof(keyA), "r_%d_amt", i);
                 snprintf(keyD, sizeof(keyD), "r_%d_dur", i);
+                snprintf(keyM, sizeof(keyM), "r_%d_mode", i);
+                snprintf(keyPC, sizeof(keyPC), "r_%d_pcnt", i);
+                snprintf(keyPO, sizeof(keyPO), "r_%d_pon", i);
+                snprintf(keyPF, sizeof(keyPF), "r_%d_poff", i);
+                snprintf(keyPW, sizeof(keyPW), "r_%d_pwait", i);
+                snprintf(keyMSG, sizeof(keyMSG), "r_%d_msg", i);
                 settings.rules[i].amount = prefs.getFloat(keyA, 1.0f);
                 settings.rules[i].durationSec = prefs.getUInt(keyD, 3);
+                settings.rules[i].mode = (uint8_t)prefs.getUInt(keyM, (uint32_t)RELAY_MODE_TIMER);
+                settings.rules[i].pulseCount = prefs.getUInt(keyPC, DEFAULT_PULSE_COUNT);
+                settings.rules[i].pulseOnSec = prefs.getUInt(keyPO, DEFAULT_PULSE_ON_SEC);
+                settings.rules[i].pulseOffSec = prefs.getUInt(keyPF, DEFAULT_PULSE_OFF_SEC);
+                settings.rules[i].pulseWaitSec = prefs.getUInt(keyPW, DEFAULT_PULSE_WAIT_SEC);
+                prefs.getString(keyMSG, settings.rules[i].pulseMessage, sizeof(settings.rules[i].pulseMessage));
+                if (settings.rules[i].pulseMessage[0] == '\0') {
+                    strncpy(settings.rules[i].pulseMessage, "Best of luck for the game", sizeof(settings.rules[i].pulseMessage) - 1);
+                }
             }
         }
 
@@ -147,10 +181,23 @@ public:
         prefs.putInt("ruleCount", settings.ruleCount);
         for (int i = 0; i < settings.ruleCount; i++) {
             char keyA[16], keyD[16];
+            char keyM[16], keyPC[16], keyPO[16], keyPF[16], keyPW[16], keyMSG[16];
             snprintf(keyA, sizeof(keyA), "r_%d_amt", i);
             snprintf(keyD, sizeof(keyD), "r_%d_dur", i);
+            snprintf(keyM, sizeof(keyM), "r_%d_mode", i);
+            snprintf(keyPC, sizeof(keyPC), "r_%d_pcnt", i);
+            snprintf(keyPO, sizeof(keyPO), "r_%d_pon", i);
+            snprintf(keyPF, sizeof(keyPF), "r_%d_poff", i);
+            snprintf(keyPW, sizeof(keyPW), "r_%d_pwait", i);
+            snprintf(keyMSG, sizeof(keyMSG), "r_%d_msg", i);
             prefs.putFloat(keyA, settings.rules[i].amount);
             prefs.putUInt(keyD, settings.rules[i].durationSec);
+            prefs.putUInt(keyM, (uint32_t)settings.rules[i].mode);
+            prefs.putUInt(keyPC, settings.rules[i].pulseCount);
+            prefs.putUInt(keyPO, settings.rules[i].pulseOnSec);
+            prefs.putUInt(keyPF, settings.rules[i].pulseOffSec);
+            prefs.putUInt(keyPW, settings.rules[i].pulseWaitSec);
+            prefs.putString(keyMSG, settings.rules[i].pulseMessage);
         }
 
         Serial.println("[STORAGE] Settings persisted to NVS.");

@@ -24,6 +24,19 @@ from app_auth import AppAuth
 
 APP_TITLE = "Smart Gateway Admin"
 
+# Payment card relay behaviour modes (must match the firmware RelayMode values in Config.h)
+MODE_TIMER = 0          # relay ON for the configured seconds once
+MODE_PULSE_MESSAGE = 1  # ON seconds -> OFF -> show message -> wait seconds -> home
+MODE_PULSE_COUNT = 2    # ON seconds / OFF seconds, repeated pulseCount times
+
+MODE_LABELS = {
+    MODE_TIMER: "Timer — ON for set seconds",
+    MODE_PULSE_MESSAGE: "Pulse — ON → message → wait → home",
+    MODE_PULSE_COUNT: "Pulse count — ON/OFF × N",
+}
+
+MAX_PULSE_COUNT = 200
+
 
 # ---------------------------------------------------------------------------
 # Small reusable dialog: a form with labelled fields, returns a dict or None
@@ -84,7 +97,7 @@ class App(tk.Tk):
         self.devices = {}          # ip -> info dict from discovery / add-by-IP
         self.clients = {}          # ip -> DeviceClient (logged in)
         self.selected_ip = None
-        self.rules = []            # payment cards being edited: [{"amount", "duration"}]
+        self.rules = []            # payment cards being edited: [{"amount","duration","mode","pulseCount","pulseOnSec","pulseOffSec","pulseWaitSec","pulseMessage"}]
         self.mode2Enabled = False  # 2nd mode: fixed 5s relay + "enjoy the game" on device
         self.scan_results = []
 
@@ -272,38 +285,240 @@ class App(tk.Tk):
 
     def build_cards(self):
         ttk.Label(self.tab_cards,
-                  text="Payment cards: each card is an amount and how long the relay stays ON after payment.",
-                  wraplength=600).pack(anchor="w")
+                  text="Payment cards: each card is an amount plus the relay behaviour that runs after payment. "
+                       "Configured here and saved to the selected device only.",
+                  wraplength=640).pack(anchor="w")
 
         body = ttk.Frame(self.tab_cards)
         body.pack(fill="both", expand=True, pady=(8, 0))
 
-        self.cards_tree = ttk.Treeview(body, columns=("amount", "seconds"), show="headings", height=10,
-                                       selectmode="browse")
+        self.cards_tree = ttk.Treeview(
+            body, columns=("amount", "mode", "on", "count", "off", "wait"), show="headings",
+            height=10, selectmode="browse")
         self.cards_tree.heading("amount", text="Amount (Rs.)")
-        self.cards_tree.heading("seconds", text="Relay ON (seconds)")
-        self.cards_tree.column("amount", width=160, anchor="center")
-        self.cards_tree.column("seconds", width=180, anchor="center")
+        self.cards_tree.heading("mode", text="Relay behaviour")
+        self.cards_tree.heading("on", text="ON (s)")
+        self.cards_tree.heading("count", text="Pulses")
+        self.cards_tree.heading("off", text="OFF (s)")
+        self.cards_tree.heading("wait", text="Wait (s)")
+        self.cards_tree.column("amount", width=120, anchor="center")
+        self.cards_tree.column("mode", width=210, anchor="w")
+        self.cards_tree.column("on", width=70, anchor="center")
+        self.cards_tree.column("count", width=70, anchor="center")
+        self.cards_tree.column("off", width=70, anchor="center")
+        self.cards_tree.column("wait", width=70, anchor="center")
         self.cards_tree.pack(side="left", fill="both", expand=True)
 
-        side = ttk.Frame(body, padding=(12, 0, 0, 0))
-        side.pack(side="left", fill="y")
+        side = ttk.LabelFrame(body, text="Card settings", padding=10)
+        side.pack(side="left", fill="y", padx=(10, 0))
+
         self.card_amount = tk.StringVar()
-        self.card_seconds = tk.StringVar()
+        self.card_mode = tk.StringVar()
+        self.card_on = tk.StringVar()
+        self.card_count = tk.StringVar()
+        self.card_off = tk.StringVar()
+        self.card_wait = tk.StringVar()
+        self.card_message = tk.StringVar()
+
+        def field(label, var, width=14, pady=(8, 0)):
+            ttk.Label(side, text=label).pack(anchor="w", pady=pady)
+            return ttk.Entry(side, textvariable=var, width=width)
+
         ttk.Label(side, text="Amount (Rs.)").pack(anchor="w")
-        ttk.Entry(side, textvariable=self.card_amount, width=14).pack(anchor="w")
-        ttk.Label(side, text="Relay ON (seconds)").pack(anchor="w", pady=(8, 0))
-        ttk.Entry(side, textvariable=self.card_seconds, width=14).pack(anchor="w")
-        ttk.Button(side, text="Add card", command=self.add_card).pack(fill="x", pady=(10, 2))
-        ttk.Button(side, text="Update selected", command=self.update_card).pack(fill="x", pady=2)
-        ttk.Button(side, text="Delete selected", command=self.delete_card).pack(fill="x", pady=2)
-        ttk.Button(side, text="Move up", command=lambda: self.move_card(-1)).pack(fill="x", pady=2)
-        ttk.Button(side, text="Move down", command=lambda: self.move_card(1)).pack(fill="x", pady=2)
-        ttk.Separator(side).pack(fill="x", pady=8)
+        field("Amount (Rs.)", self.card_amount).pack(anchor="w")
+
+        ttk.Label(side, text="Relay behaviour").pack(anchor="w", pady=(8, 0))
+        self.mode_combo = ttk.Combobox(side, textvariable=self.card_mode, width=30,
+                                       state="readonly", values=list(MODE_LABELS.values()))
+        self.mode_combo.pack(anchor="w")
+        self.mode_combo.bind("<<ComboboxSelected>>", lambda _e: self.on_mode_change())
+
+        field("ON seconds", self.card_on).pack(anchor="w")
+        field("Pulse count", self.card_count).pack(anchor="w")
+        field("OFF seconds", self.card_off).pack(anchor="w")
+        field("Wait seconds", self.card_wait).pack(anchor="w")
+        field("Message (pulse mode)", self.card_message).pack(anchor="w")
+
+        btns = ttk.Frame(side)
+        btns.pack(anchor="w", fill="x", pady=(10, 0))
+        ttk.Button(btns, text="Add card", command=self.add_card).pack(fill="x", pady=2)
+        ttk.Button(btns, text="Update selected", command=self.update_card).pack(fill="x", pady=2)
+        ttk.Button(btns, text="Delete selected", command=self.delete_card).pack(fill="x", pady=2)
+        ttk.Button(btns, text="Move up", command=lambda: self.move_card(-1)).pack(fill="x", pady=2)
+        ttk.Button(btns, text="Move down", command=lambda: self.move_card(1)).pack(fill="x", pady=2)
+
+        sep = ttk.Separator(side)
+        sep.pack(fill="x", pady=8)
         ttk.Button(side, text="Save cards to device", command=self.save_cards).pack(fill="x", pady=2)
         ttk.Button(side, text="Reload from device", command=self.refresh_device).pack(fill="x", pady=2)
 
         self.cards_tree.bind("<<TreeviewSelect>>", self.on_card_selected)
+
+    def on_mode_change(self, _event=None):
+        """Enable/disable the card fields depending on the chosen relay behaviour."""
+        mode = self._mode_from_label(self.card_mode.get())
+        timer = (mode == MODE_TIMER)
+        message = (mode == MODE_PULSE_MESSAGE)
+        count = (mode == MODE_PULSE_COUNT)
+
+        # Sensible defaults when switching mode
+        if timer:
+            if not self.card_on.get():
+                self.card_on.set("30")
+            self.card_count.set(""); self.card_off.set(""); self.card_wait.set(""); self.card_message.set("")
+        elif message:
+            if not self.card_on.get():
+                self.card_on.set("3")
+            if not self.card_wait.get():
+                self.card_wait.set("60")
+            if not self.card_message.get():
+                self.card_message.set("Best of luck for the game")
+            self.card_count.set(""); self.card_off.set("")
+        else:  # count
+            if not self.card_on.get():
+                self.card_on.set("2")
+            if not self.card_off.get():
+                self.card_off.set("1")
+            if not self.card_count.get():
+                self.card_count.set("5")
+            self.card_wait.set(""); self.card_message.set("")
+
+    def _rule_values(self, rule):
+        mode = rule.get("mode", MODE_TIMER)
+        amount = f"{float(rule.get('amount', 0)):g}"
+        mode_label = MODE_LABELS.get(mode, str(mode))
+        on_sec = str(rule.get("duration", ""))
+        if mode == MODE_TIMER:
+            count, off, wait = "-", "-", "-"
+        elif mode == MODE_PULSE_MESSAGE:
+            count, off, wait = "-", "-", str(rule.get("pulseWaitSec", ""))
+        else:
+            count = str(rule.get("pulseCount", ""))
+            off = str(rule.get("pulseOffSec", ""))
+            wait = "-"
+        return (amount, mode_label, on_sec, count, off, wait)
+
+    def render_cards(self):
+        self.cards_tree.delete(*self.cards_tree.get_children())
+        for i, card in enumerate(self.rules):
+            self.cards_tree.insert("", "end", iid=str(i), values=self._rule_values(card))
+
+    def on_card_selected(self, _event=None):
+        sel = self.cards_tree.selection()
+        if not sel:
+            return
+        card = self.rules[int(sel[0])]
+        mode = card.get("mode", MODE_TIMER)
+        self.card_mode.set(MODE_LABELS.get(mode, MODE_LABELS[MODE_TIMER]))
+        self.card_amount.set(f"{float(card.get('amount', 0)):g}")
+        self.card_on.set(str(card.get("duration", "")))
+        self.card_count.set(str(card.get("pulseCount", "")))
+        self.card_off.set(str(card.get("pulseOffSec", "")))
+        self.card_wait.set(str(card.get("pulseWaitSec", "")))
+        self.card_message.set(card.get("pulseMessage", "Best of luck for the game"))
+        self.on_mode_change()
+
+    def _parse_card(self):
+        """Validate and build a full rule dict from the form fields."""
+        try:
+            amount = float(self.card_amount.get())
+        except ValueError:
+            messagebox.showerror(APP_TITLE, "Enter a numeric amount.")
+            return None
+        if amount < 1 or amount > 100000:
+            messagebox.showerror(APP_TITLE, "Amount must be between 1 and 100000.")
+            return None
+
+        mode_label = self.card_mode.get()
+        mode = self._mode_from_label(mode_label)
+        rule = {"amount": amount, "mode": mode}
+
+        def int_field(var, label, lo, hi):
+            try:
+                v = int(var.get())
+            except ValueError:
+                messagebox.showerror(APP_TITLE, f"Enter a whole number for {label}.")
+                raise ValueError
+            if v < lo or v > hi:
+                messagebox.showerror(APP_TITLE, f"{label} must be between {lo} and {hi}.")
+                raise ValueError
+            return v
+
+        try:
+            if mode == MODE_TIMER:
+                on_sec = int_field(self.card_on, "ON seconds", 1, 3600)
+                rule.update(duration=on_sec, pulseCount=1, pulseOnSec=2, pulseOffSec=1,
+                            pulseWaitSec=60, pulseMessage="Best of luck for the game")
+            elif mode == MODE_PULSE_MESSAGE:
+                on_sec = int_field(self.card_on, "ON seconds", 1, 3600)
+                wait = int_field(self.card_wait, "Wait seconds", 1, 3600)
+                msg = self.card_message.get().strip() or "Best of luck for the game"
+                if len(msg) > 31:
+                    messagebox.showerror(APP_TITLE, "Message must be at most 31 characters.")
+                    return None
+                rule.update(duration=on_sec, pulseCount=1, pulseOnSec=on_sec, pulseOffSec=1,
+                            pulseWaitSec=wait, pulseMessage=msg)
+            else:  # MODE_PULSE_COUNT
+                count = int_field(self.card_count, "Pulse count", 1, MAX_PULSE_COUNT)
+                on_sec = int_field(self.card_on, "ON seconds", 1, 3600)
+                off = int_field(self.card_off, "OFF seconds", 1, 3600)
+                rule.update(duration=on_sec, pulseCount=count, pulseOnSec=on_sec, pulseOffSec=off,
+                            pulseWaitSec=60, pulseMessage="Best of luck for the game")
+        except ValueError:
+            return None
+
+        return rule
+
+    def _mode_from_label(self, label):
+        for m, l in MODE_LABELS.items():
+            if l == label:
+                return m
+        return MODE_TIMER
+
+    def add_card(self):
+        card = self._parse_card()
+        if card is None:
+            return
+        if len(self.rules) >= 10:
+            messagebox.showerror(APP_TITLE, "A device supports at most 10 payment cards.")
+            return
+        self.rules.append(card)
+        self.render_cards()
+
+    def update_card(self):
+        sel = self.cards_tree.selection()
+        card = self._parse_card()
+        if not sel or card is None:
+            return
+        self.rules[int(sel[0])] = card
+        self.render_cards()
+        self.cards_tree.selection_set(sel[0])
+
+    def delete_card(self):
+        sel = self.cards_tree.selection()
+        if sel:
+            del self.rules[int(sel[0])]
+            self.render_cards()
+
+    def move_card(self, step):
+        sel = self.cards_tree.selection()
+        if not sel:
+            return
+        i = int(sel[0])
+        j = i + step
+        if 0 <= j < len(self.rules):
+            self.rules[i], self.rules[j] = self.rules[j], self.rules[i]
+            self.render_cards()
+            self.cards_tree.selection_set(str(j))
+
+    def save_cards(self):
+        if not self.rules:
+            if not messagebox.askyesno(APP_TITLE, "Save with NO payment cards? The device will show "
+                                                   "'No cards' on the menu."):
+                return
+        cards = [dict(c) for c in self.rules]
+        self.with_device("Saving payment cards...", lambda c: c.set_config(rules=cards),
+                         lambda _r: messagebox.showinfo(APP_TITLE, "Payment cards saved to the device."))
 
     def build_wifi(self):
         ttk.Label(self.tab_wifi, text=(
@@ -516,7 +731,16 @@ class App(tk.Tk):
         labels["payment"].config(text=("Yes - " + str(status.get("amount", "")) + " Rs")
                                  if status.get("paymentActive") else "No")
 
-        self.rules = [{"amount": r["amount"], "duration": r["duration"]} for r in cfg.get("rules", [])]
+        self.rules = [{
+            "amount": r.get("amount", 0),
+            "duration": r.get("duration", 0),
+            "mode": r.get("mode", MODE_TIMER),
+            "pulseCount": r.get("pulseCount", 1),
+            "pulseOnSec": r.get("pulseOnSec", 2),
+            "pulseOffSec": r.get("pulseOffSec", 1),
+            "pulseWaitSec": r.get("pulseWaitSec", 60),
+            "pulseMessage": r.get("pulseMessage", "Best of luck for the game"),
+        } for r in cfg.get("rules", [])]
         self.render_cards()
 
         self.mode2Enabled = bool(cfg.get("mode2Enabled", False))
@@ -533,79 +757,6 @@ class App(tk.Tk):
         self.default_warning.config(text=(
             "WARNING: this device still uses the factory admin password. Set a new one under "
             "'Device settings'.") if cfg.get("defaultCredentials") else "")
-
-    def render_cards(self):
-        self.cards_tree.delete(*self.cards_tree.get_children())
-        for i, card in enumerate(self.rules):
-            self.cards_tree.insert("", "end", iid=str(i),
-                                   values=(f"{card['amount']:g}", card["duration"]))
-
-    def on_card_selected(self, _event=None):
-        sel = self.cards_tree.selection()
-        if not sel:
-            return
-        card = self.rules[int(sel[0])]
-        self.card_amount.set(f"{card['amount']:g}")
-        self.card_seconds.set(str(card["duration"]))
-
-    def _parse_card(self):
-        try:
-            amount = float(self.card_amount.get())
-            seconds = int(self.card_seconds.get())
-        except ValueError:
-            messagebox.showerror(APP_TITLE, "Enter a numeric amount and a whole number of seconds.")
-            return None
-        if amount < 1 or amount > 100000:
-            messagebox.showerror(APP_TITLE, "Amount must be between 1 and 100000.")
-            return None
-        if seconds < 1 or seconds > 3600:
-            messagebox.showerror(APP_TITLE, "Relay seconds must be between 1 and 3600.")
-            return None
-        return {"amount": amount, "duration": seconds}
-
-    def add_card(self):
-        card = self._parse_card()
-        if card is None:
-            return
-        if len(self.rules) >= 10:
-            messagebox.showerror(APP_TITLE, "A device supports at most 10 payment cards.")
-            return
-        self.rules.append(card)
-        self.render_cards()
-
-    def update_card(self):
-        sel = self.cards_tree.selection()
-        card = self._parse_card()
-        if not sel or card is None:
-            return
-        self.rules[int(sel[0])] = card
-        self.render_cards()
-
-    def delete_card(self):
-        sel = self.cards_tree.selection()
-        if sel:
-            del self.rules[int(sel[0])]
-            self.render_cards()
-
-    def move_card(self, step):
-        sel = self.cards_tree.selection()
-        if not sel:
-            return
-        i = int(sel[0])
-        j = i + step
-        if 0 <= j < len(self.rules):
-            self.rules[i], self.rules[j] = self.rules[j], self.rules[i]
-            self.render_cards()
-            self.cards_tree.selection_set(str(j))
-
-    def save_cards(self):
-        if not self.rules:
-            if not messagebox.askyesno(APP_TITLE, "Save with NO payment cards? The device will show "
-                                                  "'No cards' on the menu."):
-                return
-        cards = [{"amount": c["amount"], "duration": c["duration"]} for c in self.rules]
-        self.with_device("Saving payment cards...", lambda c: c.set_config(rules=cards),
-                         lambda _r: messagebox.showinfo(APP_TITLE, "Payment cards saved to the device."))
 
     # ------------------------------------------------------------------
     # Overview actions

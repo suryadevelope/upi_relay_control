@@ -71,10 +71,27 @@ enum DisplayDriverType {
 
 // QR & Polling timeouts
 #define QR_EXPIRY_SECONDS          300      // 5 minutes
-#define STATUS_POLL_INTERVAL_MS    1500     // Poll backend every 1.5s (fast confirmation, optimal load for 15-30 devices)
+#define STATUS_POLL_INTERVAL_MS    600      // Poll backend every 600ms (fast confirmation, stays within Razorpay rate limits)
 
 // 2nd Mode: fixed short relay pulse after any successful payment
 #define MODE2_RELAY_SECONDS        5        // relay ON for exactly 5 seconds in mode 2
+
+// ==========================================
+// Per-card relay behaviour modes
+// 0 TIMER            : relay ON for durationSec once (normal game time)
+// 1 PULSE_MESSAGE    : ON pulseOnSec -> OFF -> show pulseMessage -> wait pulseWaitSec -> home
+// 2 PULSE_COUNT      : ON pulseOnSec / OFF pulseOffSec, repeated pulseCount times
+// ==========================================
+enum RelayMode {
+    RELAY_MODE_TIMER = 0,
+    RELAY_MODE_PULSE_MESSAGE = 1,
+    RELAY_MODE_PULSE_COUNT = 2
+};
+
+#define DEFAULT_PULSE_ON_SEC       3   // pulse message / pulse count ON seconds
+#define DEFAULT_PULSE_OFF_SEC      1   // pulse count OFF seconds
+#define DEFAULT_PULSE_COUNT        1   // pulse count repetitions
+#define DEFAULT_PULSE_WAIT_SEC     60  // pulse message wait before home (seconds)
 
 // ==========================================
 // System State Machine Definition
@@ -109,7 +126,13 @@ inline const char* stateToString(GatewayState s) {
 // ==========================================
 struct PaymentRule {
     float amount;          // Amount in Rupees (e.g., 20.0)
-    uint32_t durationSec;  // Relay active duration in seconds (e.g., 30)
+    uint32_t durationSec;  // Relay active duration in seconds (TIMER mode)
+    uint8_t mode;          // RELAY_MODE_*: how the relay behaves after payment
+    uint32_t pulseCount;   // repetitions (PULSE_COUNT)
+    uint32_t pulseOnSec;   // ON seconds per pulse (default 2 for count, 3 for message)
+    uint32_t pulseOffSec;  // OFF seconds per pulse (default 1)
+    uint32_t pulseWaitSec; // wait seconds after the pulse before home (PULSE_MESSAGE, default 60)
+    char pulseMessage[32]; // message shown during the wait (PULSE_MESSAGE)
 };
 
 struct TransactionRecord {

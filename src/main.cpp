@@ -59,6 +59,10 @@ unsigned long stateEnteredTime = 0;
 bool relayIsPayment = false;   // false while the admin is running a relay test
 bool mode2Active = false;      // true while a mode-2 (fixed 5s) relay cycle runs
 
+// Active payment relay behaviour (set when a payment is captured)
+uint8_t activeRelayMode = RELAY_MODE_TIMER;   // RELAY_MODE_* for the running payment
+String activePulseMessage = "Best of luck for the game";
+
 int selectedRuleIndex = 0;
 bool lastWifiState = false;
 bool configDirty = false;
@@ -76,6 +80,19 @@ void finishQRRequest();
 void showNewQRSession(const String& qrId, const String& qrPayload, float amount, uint32_t duration);
 void onRelayFinished();
 void syncRuntime();
+
+// Resolve the relay behaviour + pulse parameters for the configured card matching `amount`
+void resolvePaymentRelayMode(float amount,
+                             uint8_t& outMode,
+                             uint32_t& outPulseCount,
+                             uint32_t& outPulseOn,
+                             uint32_t& outPulseOff,
+                             uint32_t& outPulseWait,
+                             String& outMessage);
+
+// Apply the resolved behaviour to the relay controller for a captured payment
+void applyPaymentRelayMode(uint8_t mode, uint32_t pulseCount, uint32_t pulseOn,
+                           uint32_t pulseOff, uint32_t pulseWait, const String& message);
 
 // Callbacks used by the admin API (LAN desktop app)
 bool apiStartPayment(float amount, uint32_t duration, String& err);
@@ -228,6 +245,17 @@ void loop() {
 
                         paymentClient.consumePayment(activeQrId, paymentId, authToken);
 
+                        // Resolve the per-card relay behaviour (admin-configured). mode2 (global)
+                        // override still wins when it is enabled.
+                        uint8_t payMode = RELAY_MODE_TIMER;
+                        uint32_t payPulseCount = 1, payPulseOn = DEFAULT_PULSE_ON_SEC,
+                                 payPulseOff = DEFAULT_PULSE_OFF_SEC, payPulseWait = DEFAULT_PULSE_WAIT_SEC;
+                        String payPulseMessage = "Best of luck for the game";
+                        resolvePaymentRelayMode(activeAmount, payMode, payPulseCount, payPulseOn,
+                                                payPulseOff, payPulseWait, payPulseMessage);
+                        activeRelayMode = payMode;
+                        activePulseMessage = payPulseMessage;
+
                         // 2nd mode: fixed 5-second relay regardless of the card's configured duration
                         uint32_t relayDuration = s.mode2Enabled ? MODE2_RELAY_SECONDS : activeDuration;
                         bool isMode2 = s.mode2Enabled;
@@ -238,7 +266,19 @@ void loop() {
 
                         relayIsPayment = true;
                         mode2Active = isMode2;
-                        relay.activate(relayDuration);
+
+                        // Apply the admin-configured relay behaviour (timer / pulse message / pulse count)
+                        if (isMode2) {
+                            relay.activateTimer(relayDuration);
+                        } else if (payMode == RELAY_MODE_PULSE_MESSAGE) {
+                            applyPaymentRelayMode(payMode, payPulseCount, payPulseOn, payPulseOff,
+                                                  payPulseWait, payPulseMessage);
+                        } else if (payMode == RELAY_MODE_PULSE_COUNT) {
+                            applyPaymentRelayMode(payMode, payPulseCount, payPulseOn, payPulseOff,
+                                                  payPulseWait, payPulseMessage);
+                        } else {
+                            relay.activateTimer(relayDuration);
+                        }
                         relay.setState(STATE_RELAY_ON);
 
                         if (isMode2) {
@@ -269,7 +309,21 @@ void loop() {
                     // Mode 2: device-only "enjoy the game" countdown
                     display.updateMode2RelayStatus(rem);
                 } else if (relayIsPayment) {
-                    display.updatePaymentSuccessRelayStatus(rem);
+                    if (activeRelayMode == RELAY_MODE_PULSE_MESSAGE) {
+                        if (relay.isRelayOnPhase()) {
+                            display.updatePaymentSuccessRelayStatus(rem); // "GAME ON: Xs"
+                        } else if (relay.isWaiting()) {
+                            // waiting before home: show the configured message + countdown
+                            display.showPulseMessageWaitScreen(activePulseMessage, rem);
+                        } else {
+                            display.updatePaymentSuccessRelayStatus(rem);
+                        }
+                    } else if (activeRelayMode == RELAY_MODE_PULSE_COUNT) {
+                        display.showPulseCountScreen(relay.getPulseIndex(), relay.getPulseTotal(),
+                                                     relay.isRelayOnPhase(), rem);
+                    } else {
+                        display.updatePaymentSuccessRelayStatus(rem);
+                    }
                 } else {
                     display.showNoticeScreen("RELAY TEST", "ON for " + String(rem) + " s", COLOR_CYAN);
                 }
@@ -443,17 +497,70 @@ void cancelActivePayment() {
     }
 }
 
+// Resolve the relay behaviour + pulse parameters for the configured card matching `amount`
+void resolvePaymentRelayMode(float amount,
+                             uint8_t& outMode,
+                             uint32_t& outPulseCount,
+                             uint32_t& outPulseOn,
+                             uint32_t& outPulseOff,
+                             uint32_t& outPulseWait,
+                             String& outMessage) {
+    DeviceSettings& s = storage.getSettings();
+    outMode = RELAY_MODE_TIMER;
+    outPulseCount = DEFAULT_PULSE_COUNT;
+    outPulseOn = DEFAULT_PULSE_ON_SEC;
+    outPulseOff = DEFAULT_PULSE_OFF_SEC;
+    outPulseWait = DEFAULT_PULSE_WAIT_SEC;
+    outMessage = "Best of luck for the game";
+
+    for (int i = 0; i < s.ruleCount; i++) {
+        if (abs(s.rules[i].amount - amount) < 0.01f) {
+            outMode = s.rules[i].mode;
+            outPulseCount = s.rules[i].pulseCount == 0 ? DEFAULT_PULSE_COUNT : s.rules[i].pulseCount;
+            outPulseOn = s.rules[i].pulseOnSec == 0 ? DEFAULT_PULSE_ON_SEC : s.rules[i].pulseOnSec;
+            outPulseOff = s.rules[i].pulseOffSec == 0 ? DEFAULT_PULSE_OFF_SEC : s.rules[i].pulseOffSec;
+            outPulseWait = s.rules[i].pulseWaitSec == 0 ? DEFAULT_PULSE_WAIT_SEC : s.rules[i].pulseWaitSec;
+            if (s.rules[i].pulseMessage[0] != '\0') {
+                outMessage = s.rules[i].pulseMessage;
+            }
+            break;
+        }
+    }
+}
+
+// Apply the resolved behaviour to the relay controller for a captured payment
+void applyPaymentRelayMode(uint8_t mode, uint32_t pulseCount, uint32_t pulseOn,
+                           uint32_t pulseOff, uint32_t pulseWait, const String& message) {
+    if (mode == RELAY_MODE_PULSE_MESSAGE) {
+        relay.activatePulseMessage(pulseOn, pulseWait);
+    } else if (mode == RELAY_MODE_PULSE_COUNT) {
+        relay.activatePulseCount(pulseCount, pulseOn, pulseOff);
+    } else {
+        // TIMER is handled by callers via activateTimer; keep a safe fallback here.
+        relay.activateTimer(3);
+    }
+    (void)message; // stored in activePulseMessage for the wait screen
+}
+
 // Called when the relay timer runs out
 void onRelayFinished() {
-    Serial.printf("[RELAY] Cycle finished (%s). Game Over.\n", relayIsPayment ? "payment" : "test");
+    Serial.printf("[RELAY] Cycle finished (%s).\n", relayIsPayment ? "payment" : "test");
     bool wasMode2 = mode2Active;
+    uint8_t finishedMode = activeRelayMode;
+    String finishedMessage = activePulseMessage;
     relay.setState(STATE_READY);
     resetPaymentSession();
     mode2Active = false;
+    activeRelayMode = RELAY_MODE_TIMER;
+    activePulseMessage = "Best of luck for the game";
+
     if (wasMode2) {
         display.updateMode2RelayStatus(0);  // "ENJOY YOUR GAME"
+    } else if (relayIsPayment && finishedMode == RELAY_MODE_PULSE_MESSAGE) {
+        // message was shown during the wait; short goodbye before home
+        display.showNoticeScreen("BEST OF LUCK", finishedMessage, COLOR_GREEN);
     } else {
-        display.updatePaymentSuccessRelayStatus(0);
+        display.updatePaymentSuccessRelayStatus(0); // "GAME OVER"
     }
     delay(1200);
     menuScreen = MENU_HOME;
@@ -698,7 +805,7 @@ bool apiRelayTest(uint32_t seconds, String& err) {
     relayIsPayment = false;
     menuScreen = MENU_HOME;
     lastDisplayUpdate = millis();
-    relay.activate(seconds);
+    relay.activateTimer(seconds);
     display.showNoticeScreen("RELAY TEST", "ON for " + String(seconds) + " s", COLOR_CYAN);
     return true;
 }

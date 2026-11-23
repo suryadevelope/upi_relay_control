@@ -333,7 +333,7 @@ app.get('/api/health', (req, res) => {
 
 // ==========================================
 // Proactive High-Speed Payment Poller
-// Actively polls Razorpay for pending sessions so captures are detected in ~1.2s
+// Actively polls Razorpay for pending sessions so captures are detected as fast as possible
 // without blocking any ESP32 HTTP requests
 // ==========================================
 let pollerActive = false;
@@ -344,7 +344,7 @@ async function pollPendingSessions() {
 
   pollerActive = true;
   try {
-    const batch = pending.slice(0, 3);
+    const batch = pending.slice(0, 6);
     for (const session of batch) {
       if (sessionStore.shouldCheckRemote(session)) {
         const livePayment = await razorpayService.checkQRPayments(session.qrId, session.amount, session.deviceId, session.createdAt);
@@ -360,7 +360,7 @@ async function pollPendingSessions() {
     pollerActive = false;
   }
 }
-setInterval(pollPendingSessions, 1000);
+setInterval(pollPendingSessions, 500);
 
 // Periodic session cleanup
 setInterval(() => {

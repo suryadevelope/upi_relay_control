@@ -247,6 +247,12 @@ private:
             JsonObject r = rules.add<JsonObject>();
             r["amount"] = s.rules[i].amount;
             r["duration"] = s.rules[i].durationSec;
+            r["mode"] = (int)s.rules[i].mode;
+            r["pulseCount"] = (int)s.rules[i].pulseCount;
+            r["pulseOnSec"] = (int)s.rules[i].pulseOnSec;
+            r["pulseOffSec"] = (int)s.rules[i].pulseOffSec;
+            r["pulseWaitSec"] = (int)s.rules[i].pulseWaitSec;
+            r["pulseMessage"] = s.rules[i].pulseMessage;
         }
         sendJson(200, doc);
     }
@@ -318,6 +324,13 @@ private:
             for (JsonObject r : arr) {
                 float amount = r["amount"].as<float>();
                 uint32_t duration = r["duration"].as<uint32_t>();
+                uint32_t mode = r["mode"].as<uint32_t>();
+                uint32_t pulseCount = r["pulseCount"].as<uint32_t>();
+                uint32_t pulseOnSec = r["pulseOnSec"].as<uint32_t>();
+                uint32_t pulseOffSec = r["pulseOffSec"].as<uint32_t>();
+                uint32_t pulseWaitSec = r["pulseWaitSec"].as<uint32_t>();
+                String pulseMessage = r["pulseMessage"].as<String>();
+
                 if (amount < 1.0f || amount > 100000.0f) {
                     sendError(400, "Card amount must be between 1 and 100000");
                     return;
@@ -326,7 +339,29 @@ private:
                     sendError(400, "Relay time must be between 1 and 3600 seconds");
                     return;
                 }
-                parsed[n++] = { amount, duration };
+                if (mode > 2) {
+                    sendError(400, "Card mode must be 0 (timer), 1 (pulse message) or 2 (pulse count)");
+                    return;
+                }
+                if (pulseCount > 200) {
+                    sendError(400, "Pulse count must be between 1 and 200");
+                    return;
+                }
+                if (pulseOnSec > 3600 || pulseOffSec > 3600 || pulseWaitSec > 3600) {
+                    sendError(400, "Pulse seconds must be between 0 and 3600");
+                    return;
+                }
+                if (pulseMessage.length() > 31) {
+                    sendError(400, "Pulse message must be at most 31 characters");
+                    return;
+                }
+
+                PaymentRule pr = { amount, duration, (uint8_t)mode, pulseCount, pulseOnSec,
+                                   pulseOffSec, pulseWaitSec, "" };
+                strncpy(pr.pulseMessage, pulseMessage.c_str(),
+                        sizeof(pr.pulseMessage) - 1);
+                parsed[n] = pr;
+                n++;
             }
             for (int i = 0; i < n; i++) s.rules[i] = parsed[i];
             s.ruleCount = n;

@@ -36,7 +36,7 @@ PC as a salted PBKDF2 hash (`%APPDATA%\SmartGatewayAdmin\app_auth.json`).
 | Tab | Actions |
 |-----|---------|
 | Overview | Live status, enable / stop service, cancel payment, restart, relay test, relay OFF |
-| Payment cards | Amount + relay ON seconds per card (max 10), reorder, save to device |
+| Payment cards | Amount + relay behaviour per card (max 10), reorder, save to device. Behaviours: <br>&nbsp;&nbsp;• **Timer** – relay ON for the configured seconds once.<br>&nbsp;&nbsp;• **Pulse message** – ON seconds → OFF → show a message → wait seconds → home (e.g. 3 s ON, "Best of luck for the game", wait 60 s).<br>&nbsp;&nbsp;• **Pulse count** – ON seconds / OFF seconds repeated N times (e.g. 2 s ON / 1 s OFF × 5). |
 | Wi-Fi | Scan and set the internet Wi-Fi. Only works while this PC is on the device hotspot |
 | Device settings | Device name, backend URL, backend device key, device admin login |
 | Transactions | Recent payments and relay results |

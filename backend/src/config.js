@@ -11,8 +11,8 @@ module.exports = {
   // QR / session validity in seconds (Razorpay requires close_by >= 2 minutes ahead)
   QR_EXPIRY_SEC: Math.max(parseInt(process.env.QR_EXPIRY_SEC) || 300, 120),
   // Minimum gap between Razorpay status API calls per session when polling directly.
-  // 1200ms enables sub-1.5s payment verification while staying well within Razorpay rate limits.
-  STATUS_POLL_MIN_MS: parseInt(process.env.STATUS_POLL_MIN_MS) || 1200,
+  // 500ms enables sub-second payment verification while staying within Razorpay rate limits.
+  STATUS_POLL_MIN_MS: parseInt(process.env.STATUS_POLL_MIN_MS) || 500,
   DEVICE_API_KEY: process.env.DEVICE_API_KEY || 'sg_device_secret_key_123',
   MOCK_MODE: process.env.MOCK_MODE === 'true' || !process.env.RAZORPAY_KEY_ID || process.env.RAZORPAY_KEY_ID.includes('YourKey')
 };
